@@ -94,10 +94,17 @@ export class CorsairClient {
 
   constructor() {
     const env = requireCorsairEnv();
+    const instanceName = sanitizeInstanceName(env.instanceName);
+
     this.baseUrl = normalizeBaseUrl(env.apiBaseUrl);
     this.apiKey = env.apiKey;
-    this.configuredInstanceId = env.instanceId;
-    this.instanceName = sanitizeInstanceName(env.instanceName);
+    this.configuredInstanceId = shouldTreatInstanceIdAsName(
+      env.instanceId,
+      instanceName,
+    )
+      ? ""
+      : env.instanceId;
+    this.instanceName = instanceName;
     this.driver = parseDriver(env.driver);
   }
 
@@ -413,6 +420,22 @@ function sanitizeInstanceName(value: string) {
     .replace(/^-|-$/g, "");
 
   return sanitized || "triageos";
+}
+
+function shouldTreatInstanceIdAsName(value: string, instanceName: string) {
+  if (!value) return false;
+  if (looksLikeOpaqueInstanceId(value)) return false;
+
+  return sanitizeInstanceName(value) === instanceName;
+}
+
+function looksLikeOpaqueInstanceId(value: string) {
+  return (
+    /^(inst|ins|instance)_[a-z0-9_-]+$/i.test(value) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
 }
 
 async function loadCorsairSdk(): Promise<SdkModule | null> {
