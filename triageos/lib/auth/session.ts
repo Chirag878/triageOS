@@ -2,7 +2,11 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { getAdminEmails } from "@/config/env";
-import { db } from "@/db/client";
+import { db, isDatabaseConfigured } from "@/db/client";
+import {
+  assertDatabaseConfigured,
+  explainDatabaseError,
+} from "@/lib/db/errors";
 import { profiles, usageCounters, userPreferences } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,21 +35,13 @@ export async function ensureProfile() {
   const adminEmails = getAdminEmails();
   const role = !isGuest && adminEmails.includes(email) ? "admin" : "user";
 
-  const [profile] = await db
-    .insert(profiles)
-    .values({
-      id: user.id,
-      email,
-      fullName:
-        user.user_metadata?.full_name ??
-        user.user_metadata?.name ??
-        (isGuest ? "Guest workspace" : null),
-      avatarUrl: user.user_metadata?.avatar_url ?? null,
-      role,
-    })
-    .onConflictDoUpdate({
-      target: profiles.id,
-      set: {
+  try {
+    assertDatabaseConfigured(isDatabaseConfigured);
+
+    const [profile] = await db
+      .insert(profiles)
+      .values({
+        id: user.id,
         email,
         fullName:
           user.user_metadata?.full_name ??
@@ -53,24 +49,38 @@ export async function ensureProfile() {
           (isGuest ? "Guest workspace" : null),
         avatarUrl: user.user_metadata?.avatar_url ?? null,
         role,
-        updatedAt: new Date(),
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: profiles.id,
+        set: {
+          email,
+          fullName:
+            user.user_metadata?.full_name ??
+            user.user_metadata?.name ??
+            (isGuest ? "Guest workspace" : null),
+          avatarUrl: user.user_metadata?.avatar_url ?? null,
+          role,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-  await db
-    .insert(userPreferences)
-    .values({ userId: user.id })
-    .onConflictDoNothing({ target: userPreferences.userId });
+    await db
+      .insert(userPreferences)
+      .values({ userId: user.id })
+      .onConflictDoNothing({ target: userPreferences.userId });
 
-  await db
-    .insert(usageCounters)
-    .values({ userId: user.id, monthKey: monthKey() })
-    .onConflictDoNothing({
-      target: [usageCounters.userId, usageCounters.monthKey],
-    });
+    await db
+      .insert(usageCounters)
+      .values({ userId: user.id, monthKey: monthKey() })
+      .onConflictDoNothing({
+        target: [usageCounters.userId, usageCounters.monthKey],
+      });
 
-  return profile;
+    return profile;
+  } catch (error) {
+    throw explainDatabaseError(error);
+  }
 }
 
 export async function requireUser() {

@@ -45,6 +45,7 @@ export function getCorsairEnv() {
     instanceId: process.env.CORSAIR_INSTANCE_ID ?? "",
     apiBaseUrl: process.env.CORSAIR_API_BASE_URL ?? "https://api.corsair.dev",
     webhookSecret: process.env.CORSAIR_WEBHOOK_SECRET ?? "",
+    driver: process.env.CORSAIR_DRIVER ?? "auto",
   };
 }
 

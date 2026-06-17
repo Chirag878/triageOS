@@ -1,6 +1,23 @@
 import { requireCorsairEnv } from "@/config/env";
 
 type JsonRecord = Record<string, unknown>;
+type CorsairDriver = "auto" | "sdk" | "rest";
+
+type SdkTenant = {
+  connectLink?: {
+    create: (input?: JsonRecord) => Promise<unknown>;
+  };
+  run?: (path: string, input?: JsonRecord) => Promise<unknown>;
+  status?: () => Promise<unknown>;
+};
+
+type SdkModule = {
+  createClient?: (options: { apiKey: string }) => {
+    instance: (instanceId: string) => {
+      tenant: (tenantId: string) => SdkTenant;
+    };
+  };
+};
 
 export class CorsairError extends Error {
   constructor(
@@ -51,12 +68,14 @@ export class CorsairClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly instanceId: string;
+  private readonly driver: CorsairDriver;
 
   constructor() {
     const env = requireCorsairEnv();
     this.baseUrl = normalizeBaseUrl(env.apiBaseUrl);
     this.apiKey = env.apiKey;
     this.instanceId = env.instanceId;
+    this.driver = parseDriver(env.driver);
   }
 
   async createConnectLink(input: {
@@ -64,14 +83,33 @@ export class CorsairClient {
     plugins: readonly string[];
     returnUrl: string;
   }): Promise<CorsairConnectLinkResponse> {
-    const payload = await this.request<JsonRecord>(
-      "POST",
-      this.tenantPath(input.tenantId, "connect-link"),
-      {
-        plugins: input.plugins,
-        returnUrl: input.returnUrl,
+    const sdkPayload = await this.trySdk(
+      "connect-link",
+      async (tenant) => {
+        if (!tenant.connectLink?.create) {
+          throw new CorsairError(
+            "Installed Corsair SDK does not expose tenant.connectLink.create().",
+          );
+        }
+
+        return tenant.connectLink.create({
+          plugins: input.plugins,
+          returnUrl: input.returnUrl,
+        });
       },
+      input.tenantId,
     );
+
+    const payload =
+      sdkPayload ??
+      (await this.request<JsonRecord>(
+        "POST",
+        this.tenantPath(input.tenantId, "connect-link"),
+        {
+          plugins: input.plugins,
+          returnUrl: input.returnUrl,
+        },
+      ));
 
     const url = readUrl(payload);
 
@@ -86,7 +124,9 @@ export class CorsairClient {
     return {
       url,
       expiresAt:
-        typeof payload.expiresAt === "string" ? payload.expiresAt : undefined,
+        typeof (payload as JsonRecord).expiresAt === "string"
+          ? ((payload as JsonRecord).expiresAt as string)
+          : undefined,
     };
   }
 
@@ -95,18 +135,50 @@ export class CorsairClient {
     path: string;
     payload?: JsonRecord;
   }): Promise<CorsairRunResult<TData>> {
-    return this.request<CorsairRunResult<TData>>(
-      "POST",
-      this.tenantPath(input.tenantId, "run"),
-      {
-        path: input.path,
-        input: input.payload ?? {},
+    const sdkPayload = await this.trySdk(
+      "run",
+      async (tenant) => {
+        if (!tenant.run) {
+          throw new CorsairError(
+            "Installed Corsair SDK does not expose tenant.run().",
+          );
+        }
+
+        return tenant.run(input.path, input.payload ?? {});
       },
+      input.tenantId,
     );
+
+    return (sdkPayload ??
+      (await this.request<CorsairRunResult<TData>>(
+        "POST",
+        this.tenantPath(input.tenantId, "run"),
+        {
+          path: input.path,
+          input: input.payload ?? {},
+        },
+      ))) as CorsairRunResult<TData>;
   }
 
   async getTenantStatus(tenantId: string) {
-    return this.request<JsonRecord>("GET", this.tenantPath(tenantId, "status"));
+    const sdkPayload = await this.trySdk(
+      "status",
+      async (tenant) => {
+        if (!tenant.status) {
+          throw new CorsairError(
+            "Installed Corsair SDK does not expose tenant.status().",
+          );
+        }
+
+        return tenant.status();
+      },
+      tenantId,
+    );
+
+    return (
+      sdkPayload ??
+      this.request<JsonRecord>("GET", this.tenantPath(tenantId, "status"))
+    );
   }
 
   private tenantPath(tenantId: string, action: string) {
@@ -118,6 +190,12 @@ export class CorsairClient {
     path: string,
     body?: JsonRecord,
   ): Promise<TResponse> {
+    if (this.driver === "sdk") {
+      throw new CorsairError(
+        "CORSAIR_DRIVER=sdk but @corsair-dev/app is not installed or failed to load. Install the SDK or set CORSAIR_DRIVER=rest.",
+      );
+    }
+
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
@@ -133,8 +211,7 @@ export class CorsairClient {
 
     if (!response.ok) {
       throw new CorsairError(
-        getErrorMessage(payload) ??
-          `Corsair request failed with status ${response.status}.`,
+        explainCorsairHttpError(response.status, payload, this.instanceId),
         response.status,
         payload,
       );
@@ -142,10 +219,54 @@ export class CorsairClient {
 
     return payload as TResponse;
   }
+
+  private async trySdk<TPayload>(
+    operation: string,
+    callback: (tenant: SdkTenant) => Promise<TPayload>,
+    tenantId: string,
+  ) {
+    if (this.driver === "rest") return null;
+
+    const sdk = await loadCorsairSdk();
+
+    if (!sdk?.createClient) {
+      if (this.driver === "sdk") {
+        throw new CorsairError(
+          `CORSAIR_DRIVER=sdk but @corsair-dev/app could not be loaded for Corsair ${operation}. Install @corsair-dev/app or set CORSAIR_DRIVER=rest.`,
+        );
+      }
+
+      return null;
+    }
+
+    const corsair = sdk.createClient({ apiKey: this.apiKey });
+    const tenant = corsair.instance(this.instanceId).tenant(tenantId);
+
+    return callback(tenant);
+  }
 }
 
 export function createCorsairClient() {
   return new CorsairClient();
+}
+
+function parseDriver(value: string): CorsairDriver {
+  return value === "sdk" || value === "rest" || value === "auto"
+    ? value
+    : "auto";
+}
+
+async function loadCorsairSdk(): Promise<SdkModule | null> {
+  try {
+    const dynamicImport = new Function(
+      "specifier",
+      "return import(specifier)",
+    ) as (specifier: string) => Promise<SdkModule>;
+
+    return await dynamicImport("@corsair-dev/app");
+  } catch {
+    return null;
+  }
 }
 
 function tryParseJson(text: string) {
@@ -154,6 +275,39 @@ function tryParseJson(text: string) {
   } catch {
     return { raw: text };
   }
+}
+
+function explainCorsairHttpError(
+  status: number,
+  payload: unknown,
+  instanceId: string,
+) {
+  const message = getErrorMessage(payload);
+  const lowerMessage = message?.toLowerCase() ?? "";
+
+  if (
+    status === 404 &&
+    lowerMessage.includes("instance") &&
+    lowerMessage.includes("not found")
+  ) {
+    return `${message}
+
+Your CORSAIR_INSTANCE_ID is currently "${instanceId}". This must be the real Corsair instance ID from the Corsair dashboard, not the display name/app name. Also make sure CORSAIR_DEV_KEY belongs to the same Corsair workspace that owns that instance.`;
+  }
+
+  if (status === 401 || status === 403) {
+    return `${message ?? `Corsair request failed with status ${status}.`}
+
+Check CORSAIR_DEV_KEY. It must be a valid developer key with access to CORSAIR_INSTANCE_ID.`;
+  }
+
+  if (status === 404) {
+    return `${message ?? "Corsair REST endpoint was not found."}
+
+If you installed @corsair-dev/app, set CORSAIR_DRIVER=sdk. If using REST, update lib/corsair/client.ts to match Corsair's current REST path.`;
+  }
+
+  return message ?? `Corsair request failed with status ${status}.`;
 }
 
 function getErrorMessage(payload: unknown) {

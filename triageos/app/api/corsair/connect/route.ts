@@ -16,8 +16,6 @@ export async function POST() {
     const corsair = createCorsairClient();
     const env = getPublicEnv();
 
-console.log("---debugging the key value---", process.env.CORSAIR_API_KEY);
-
     const connectLink = await corsair.createConnectLink({
       tenantId: connection.corsairAccountId,
       plugins: CORSAIR_CONNECT_PLUGINS,
@@ -29,9 +27,7 @@ console.log("---debugging the key value---", process.env.CORSAIR_API_KEY);
       expiresAt: connectLink.expiresAt ?? null,
     });
   } catch (error) {
-    console.log("---corsair crash details---", error);
-    const status =
-      error instanceof CorsairError && error.status ? error.status : 500;
+    const status = error instanceof CorsairError && error.status ? 502 : 500;
     const message =
       error instanceof Error
         ? error.message
