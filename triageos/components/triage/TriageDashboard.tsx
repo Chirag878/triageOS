@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   Bot,
   CalendarClock,
@@ -84,6 +84,11 @@ export function TriageDashboard({
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  const selectedIndex = useMemo(
+    () => items.findIndex((item) => item.id === selectedItem?.id),
+    [items, selectedItem?.id],
+  );
+
   const stats = useMemo(() => {
     const urgent = items.filter(
       (item) => item.priorityLabel === "urgent",
@@ -146,7 +151,45 @@ export function TriageDashboard({
     });
   };
 
-  const executeItem = (triageItemId: string) => {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement
+      )
+        return;
+
+      if (event.key.toLowerCase() === "j" && items.length > 0) {
+        event.preventDefault();
+        const nextIndex =
+          selectedIndex >= 0
+            ? Math.min(selectedIndex + 1, items.length - 1)
+            : 0;
+        setSelectedItem(items[nextIndex]);
+      }
+
+      if (event.key.toLowerCase() === "k" && items.length > 0) {
+        event.preventDefault();
+        const previousIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
+        setSelectedItem(items[previousIndex]);
+      }
+
+      if (event.key.toLowerCase() === "r" && selectedItem) {
+        event.preventDefault();
+        analyzeItem(selectedItem.id);
+      }
+
+      if (event.key.toLowerCase() === "e" && selectedItem?.suggestedReply) {
+        event.preventDefault();
+        executeItem(selectedItem.id);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [items, selectedIndex, selectedItem]);
+
+  function executeItem(triageItemId: string) {
     if (
       !window.confirm(
         "Create the calendar event and Gmail draft for this workflow?",
@@ -189,7 +232,7 @@ export function TriageDashboard({
         "Workflow executed: calendar event/draft actions were sent through Corsair.",
       );
     });
-  };
+  }
 
   return (
     <div className="space-y-6">
@@ -202,6 +245,31 @@ export function TriageDashboard({
         />
         <StatCard icon={Sparkles} label="Urgent" value={stats.urgent} />
       </section>
+
+      <div className="rounded-[2rem] border border-emerald-200/70 bg-gradient-to-r from-emerald-50 via-white to-sky-50 p-5 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-4">
+          <PlaybookStep
+            step="01"
+            title="Sync Gmail"
+            text="Pull real messages via Corsair."
+          />
+          <PlaybookStep
+            step="02"
+            title="Pick a card"
+            text="Click the email you want to understand."
+          />
+          <PlaybookStep
+            step="03"
+            title="Generate AI"
+            text="Create reply, score, timeline, event."
+          />
+          <PlaybookStep
+            step="04"
+            title="Approve"
+            text="Create Gmail draft and Calendar event."
+          />
+        </div>
+      </div>
 
       <Card className="overflow-hidden rounded-[2rem] border-white/70 bg-white/80 shadow-sm backdrop-blur-xl">
         <CardHeader className="flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
@@ -293,6 +361,37 @@ export function TriageDashboard({
   );
 }
 
+function PlaybookStep({
+  step,
+  title,
+  text,
+}: {
+  step: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="rounded-[1.25rem] border border-white/80 bg-white/70 p-4 transition hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-900/5">
+      <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">
+        {step}
+      </p>
+      <h3 className="mt-2 font-black tracking-tight">{title}</h3>
+      <p className="mt-1 text-sm leading-6 text-slate-600">{text}</p>
+    </div>
+  );
+}
+
+function ShortcutKey({ label, text }: { label: string; text: string }) {
+  return (
+    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+      <kbd className="mr-1 rounded bg-white px-1.5 py-0.5 text-slate-950 shadow-sm">
+        {label}
+      </kbd>
+      {text}
+    </span>
+  );
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -340,11 +439,7 @@ function WorkflowCard({
             <Badge variant="outline" className="rounded-full capitalize">
               {item.recommendedAction.replaceAll("_", " ")}
             </Badge>
-            {item.autopilotScore ? (
-              <Badge className="rounded-full bg-purple-100 text-purple-800 hover:bg-purple-100">
-                {Math.round(item.autopilotScore.confidence * 100)}% confidence
-              </Badge>
-            ) : null}
+            <AIStatusBadge item={item} />
           </div>
           <h3 className="mt-3 truncate text-xl font-black tracking-tight">
             {item.subject}
@@ -499,6 +594,17 @@ function WorkflowDetailDialog({
               </section>
             ) : null}
 
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="font-black tracking-tight">Keyboard shortcuts</h3>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+                <ShortcutKey label="J" text="Next" />
+                <ShortcutKey label="K" text="Previous" />
+                <ShortcutKey label="R" text="Regenerate" />
+                <ShortcutKey label="E" text="Execute" />
+                <ShortcutKey label="Esc" text="Close" />
+              </div>
+            </section>
+
             {item.autopilotScore ? (
               <section className="grid gap-3 md:grid-cols-3">
                 <InfoPill
@@ -621,6 +727,30 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
       </dt>
       <dd className="mt-1">{value || "—"}</dd>
     </div>
+  );
+}
+
+function AIStatusBadge({ item }: { item: TriageItem }) {
+  if (item.status === "completed") {
+    return (
+      <Badge className="rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+        Completed
+      </Badge>
+    );
+  }
+
+  if (item.autopilotScore) {
+    return (
+      <Badge className="rounded-full bg-purple-100 text-purple-800 hover:bg-purple-100">
+        {Math.round(item.autopilotScore.confidence * 100)}% AI ready
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge className="rounded-full bg-slate-100 text-slate-600 hover:bg-slate-100">
+      Needs AI
+    </Badge>
   );
 }
 

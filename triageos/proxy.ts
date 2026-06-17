@@ -3,7 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getPublicEnv } from "@/config/env";
 
-const protectedPrefixes = ["/dashboard", "/onboarding", "/reset-password"];
+const protectedPrefixes = [
+  "/dashboard",
+  "/onboarding",
+  "/reset-password",
+  "/workflows",
+  "/activity",
+  "/settings",
+];
 const adminPrefixes = ["/admin"];
 const authPages = ["/login", "/signup", "/register"];
 
