@@ -1,8 +1,11 @@
 type ServerEnvKey =
   | "DATABASE_URL"
   | "SUPABASE_SERVICE_ROLE_KEY"
+  | "CORSAIR_API_KEY"
   | "CORSAIR_DEV_KEY"
   | "CORSAIR_INSTANCE_ID"
+  | "CORSAIR_API_BASE_URL"
+  | "CORSAIR_CLIENT_SECRET"
   | "OPENAI_API_KEY"
   | "CORSAIR_WEBHOOK_SECRET";
 
@@ -36,24 +39,39 @@ export function getAdminEmails() {
     .filter(Boolean);
 }
 
+export function getCorsairEnv() {
+  return {
+    apiKey: process.env.CORSAIR_DEV_KEY ?? process.env.CORSAIR_API_KEY ?? "",
+    instanceId: process.env.CORSAIR_INSTANCE_ID ?? "",
+    apiBaseUrl: process.env.CORSAIR_API_BASE_URL ?? "https://api.corsair.dev",
+    webhookSecret: process.env.CORSAIR_WEBHOOK_SECRET ?? "",
+  };
+}
+
+export function requireCorsairEnv() {
+  const env = getCorsairEnv();
+
+  if (!env.apiKey) {
+    throw new Error("Missing CORSAIR_DEV_KEY or CORSAIR_API_KEY.");
+  }
+
+  if (!env.instanceId) {
+    throw new Error("Missing CORSAIR_INSTANCE_ID.");
+  }
+
+  return env;
+}
+
 export function getServerEnv() {
   return {
     ...getPublicEnv(),
     databaseUrl: readEnv("DATABASE_URL"),
     supabaseServiceRoleKey: readEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    corsairApiKey: readEnv("CORSAIR_DEV_KEY"),
-    corsairClientSecret: readEnv("CORSAIR_INSTANCE_ID"),
-    corsairWebhookSecret: readEnv("CORSAIR_WEBHOOK_SECRET"),
+    corsairApiKey: process.env.CORSAIR_DEV_KEY ?? readEnv("CORSAIR_API_KEY"),
+    corsairInstanceId: process.env.CORSAIR_INSTANCE_ID ?? "",
+    corsairClientSecret: process.env.CORSAIR_CLIENT_SECRET ?? "",
+    corsairWebhookSecret: process.env.CORSAIR_WEBHOOK_SECRET ?? "",
     openaiApiKey: readEnv("OPENAI_API_KEY"),
     adminEmails: getAdminEmails(),
-  };
-}
-
-
-export function getCorsairEnv() {
-  return {
-    corsairDevKey: readEnv("CORSAIR_DEV_KEY"),
-    corsairInstanceId: readEnv("CORSAIR_INSTANCE_ID"),
-    corsairWebhookSecret: process.env.CORSAIR_WEBHOOK_SECRET,
   };
 }

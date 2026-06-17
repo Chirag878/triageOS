@@ -82,7 +82,7 @@ export default function Home() {
               <Sparkles className="mr-1.5 size-3.5" /> Gen-Z calm mode for Gmail
               + Calendar
             </Badge>
-            <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.95] tracking-tight text-slate-950 sm:text-7xl lg:text-8xl">
+            <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.95] tracking-[-0.06em] text-slate-950 sm:text-7xl lg:text-8xl">
               Turn every important email into a confirmed next action.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 sm:text-xl">
@@ -119,17 +119,17 @@ export default function Home() {
 
       <section id="workflow" className="px-6 pb-20 sm:px-10 lg:px-16">
         <div className="mx-auto grid max-w-7xl gap-5 md:grid-cols-3">
-          {cards.map(({ icon: Icon, title, text }) => (
+          {cards.map((card) => (
             <Card
-              key={title}
+              key={card.title}
               className="rounded-[2rem] border-white/70 bg-white/70 shadow-sm backdrop-blur-xl"
             >
               <CardContent className="p-7">
-                <Icon className="size-9 text-emerald-700" />
+                <card.icon className="size-9 text-emerald-700" />
                 <h3 className="mt-5 text-xl font-black tracking-tight">
-                  {title}
+                  {card.title}
                 </h3>
-                <p className="mt-3 leading-7 text-slate-600">{text}</p>
+                <p className="mt-3 leading-7 text-slate-600">{card.text}</p>
               </CardContent>
             </Card>
           ))}
@@ -143,7 +143,7 @@ export default function Home() {
               <Badge className="rounded-full bg-white/10 text-white hover:bg-white/10">
                 Theme locked
               </Badge>
-              <h2 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">
+              <h2 className="mt-5 text-4xl font-black tracking-[-0.04em] md:text-5xl">
                 Alpine Panda OS
               </h2>
               <p className="mt-4 text-lg leading-8 text-white/70">
@@ -180,7 +180,7 @@ export default function Home() {
         id="pricing-preview"
         className="px-6 pb-24 text-center sm:px-10 lg:px-16"
       >
-        <h2 className="text-4xl font-black tracking-tight md:text-6xl">
+        <h2 className="text-4xl font-black tracking-[-0.04em] md:text-6xl">
           SaaS-ready pricing story
         </h2>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600">

@@ -31,7 +31,7 @@ export function AuthShell({ mode = "signin" }: { mode?: "signin" | "signup" }) {
           <p className="font-bold uppercase tracking-[0.25em] text-emerald-700">
             Secure app identity
           </p>
-          <h1 className="mt-5 text-5xl font-black leading-none tracking-tight md:text-7xl">
+          <h1 className="mt-5 text-5xl font-black leading-none tracking-[-0.06em] md:text-7xl">
             Sign in before connecting Gmail.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">

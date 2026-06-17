@@ -38,7 +38,7 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
   return (
     <Card className="w-full max-w-md rounded-[2rem] border-white/70 bg-white/80 shadow-2xl shadow-emerald-950/10 backdrop-blur-xl">
       <CardHeader className="p-7 pb-3">
-        <CardTitle className="text-3xl font-black tracking-tight">
+        <CardTitle className="text-3xl font-black tracking-[-0.04em]">
           Enter TriageOS
         </CardTitle>
         <p className="text-sm leading-6 text-slate-600">
@@ -69,7 +69,7 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
                 label="Password"
                 name="password"
                 type="password"
-                placeholder="Password"
+                placeholder="••••••••"
               />
               <div className="flex justify-end">
                 <Link

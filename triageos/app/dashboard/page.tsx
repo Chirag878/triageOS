@@ -89,8 +89,11 @@ export default async function DashboardPage() {
             <p>3. AI Workflow Card generation.</p>
             <p>4. Confirm modal + execute route.</p>
           </div>
-          <Button className="mt-6 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400">
-            Connect Corsair next
+          <Button
+            asChild
+            className="mt-6 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+          >
+            <a href="/onboarding">Connect Corsair next</a>
           </Button>
         </div>
       </section>
