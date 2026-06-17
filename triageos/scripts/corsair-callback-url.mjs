@@ -1,5 +1,9 @@
 import { createClient } from "@corsair-dev/app";
 
+import { loadDotEnvLocal } from "./env-loader.mjs";
+
+loadDotEnvLocal();
+
 const apiKey = process.env.CORSAIR_DEV_KEY || process.env.CORSAIR_API_KEY;
 const instanceName =
   process.env.CORSAIR_INSTANCE_NAME ||

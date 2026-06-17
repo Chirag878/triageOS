@@ -1,5 +1,9 @@
 import { createClient } from "@corsair-dev/app";
 
+import { loadDotEnvLocal } from "./env-loader.mjs";
+
+loadDotEnvLocal();
+
 function readRequiredEnv(name) {
   const value = process.env[name]?.trim();
 
