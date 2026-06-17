@@ -1,0 +1,166 @@
+import { requireCorsairEnv } from "@/config/env";
+
+type JsonRecord = Record<string, unknown>;
+
+export class CorsairError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "CorsairError";
+  }
+}
+
+export type CorsairConnectLinkResponse = {
+  url: string;
+  expiresAt?: string;
+};
+
+export type CorsairRunResult<TData = unknown> =
+  | { success: true; data: TData }
+  | { success: false; error?: string; signInLink?: string; details?: unknown };
+
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/$/, "");
+}
+
+function readUrl(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const record = payload as JsonRecord;
+  const candidates = [
+    record.url,
+    record.signInLink,
+    record.connectUrl,
+    record.connect_link_url,
+  ];
+  const found = candidates.find((value) => typeof value === "string");
+
+  return typeof found === "string" ? found : null;
+}
+
+export function getCorsairTenantId(userId: string) {
+  // Keep tenant ids deterministic: one Supabase user maps to one Corsair tenant.
+  // This avoids tenant creation race conditions and prevents duplicate Corsair users.
+  return userId;
+}
+
+export class CorsairClient {
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly instanceId: string;
+
+  constructor() {
+    const env = requireCorsairEnv();
+    this.baseUrl = normalizeBaseUrl(env.apiBaseUrl);
+    this.apiKey = env.apiKey;
+    this.instanceId = env.instanceId;
+  }
+
+  async createConnectLink(input: {
+    tenantId: string;
+    plugins: readonly string[];
+    returnUrl: string;
+  }): Promise<CorsairConnectLinkResponse> {
+    const payload = await this.request<JsonRecord>(
+      "POST",
+      this.tenantPath(input.tenantId, "connect-link"),
+      {
+        plugins: input.plugins,
+        returnUrl: input.returnUrl,
+      },
+    );
+
+    const url = readUrl(payload);
+
+    if (!url) {
+      throw new CorsairError(
+        "Corsair did not return a connect URL.",
+        undefined,
+        payload,
+      );
+    }
+
+    return {
+      url,
+      expiresAt:
+        typeof payload.expiresAt === "string" ? payload.expiresAt : undefined,
+    };
+  }
+
+  async run<TData = unknown>(input: {
+    tenantId: string;
+    path: string;
+    payload?: JsonRecord;
+  }): Promise<CorsairRunResult<TData>> {
+    return this.request<CorsairRunResult<TData>>(
+      "POST",
+      this.tenantPath(input.tenantId, "run"),
+      {
+        path: input.path,
+        input: input.payload ?? {},
+      },
+    );
+  }
+
+  async getTenantStatus(tenantId: string) {
+    return this.request<JsonRecord>("GET", this.tenantPath(tenantId, "status"));
+  }
+
+  private tenantPath(tenantId: string, action: string) {
+    return `/instances/${encodeURIComponent(this.instanceId)}/tenants/${encodeURIComponent(tenantId)}/${action}`;
+  }
+
+  private async request<TResponse>(
+    method: "GET" | "POST",
+    path: string,
+    body?: JsonRecord,
+  ): Promise<TResponse> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
+
+    const text = await response.text();
+    const payload = text ? tryParseJson(text) : null;
+
+    if (!response.ok) {
+      throw new CorsairError(
+        getErrorMessage(payload) ??
+          `Corsair request failed with status ${response.status}.`,
+        response.status,
+        payload,
+      );
+    }
+
+    return payload as TResponse;
+  }
+}
+
+export function createCorsairClient() {
+  return new CorsairClient();
+}
+
+function tryParseJson(text: string) {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { raw: text };
+  }
+}
+
+function getErrorMessage(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const record = payload as JsonRecord;
+  const message = record.message ?? record.error ?? record.detail;
+
+  return typeof message === "string" ? message : null;
+}
