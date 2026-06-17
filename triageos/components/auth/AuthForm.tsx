@@ -9,6 +9,9 @@ import {
   signInWithPassword,
   signUpWithPassword,
 } from "@/app/login/actions";
+import { ArrowRight, Loader2 } from "lucide-react";
+
+import { signInWithPassword, signUpWithPassword } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +25,7 @@ type AuthFormProps = {
 };
 
 export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
+export function AuthForm() {
   const [signInState, signInAction, signInPending] = useActionState(
     signInWithPassword,
     initialState,
@@ -48,6 +52,7 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
       </CardHeader>
       <CardContent className="p-7 pt-4">
         <Tabs defaultValue={defaultTab} className="w-full">
+        <Tabs defaultValue="signin" className="w-full">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl bg-emerald-50">
             <TabsTrigger value="signin" className="rounded-xl">
               Sign in
@@ -58,6 +63,7 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
           </TabsList>
 
           <TabsContent value="signin" className="mt-6 space-y-5">
+          <TabsContent value="signin" className="mt-6">
             <form action={signInAction} className="space-y-4">
               <AuthField
                 label="Email"
@@ -189,6 +195,9 @@ function AuthField({
       <Label htmlFor={`${label}-${name}`}>{label}</Label>
       <Input
         id={`${label}-${name}`}
+      <Label htmlFor={name}>{label}</Label>
+      <Input
+        id={name}
         name={name}
         type={type}
         placeholder={placeholder}

@@ -46,5 +46,9 @@ export function getServerEnv() {
     corsairWebhookSecret: readEnv("CORSAIR_WEBHOOK_SECRET"),
     openaiApiKey: readEnv("OPENAI_API_KEY"),
     adminEmails: getAdminEmails(),
+    adminEmails: (process.env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
   };
 }
