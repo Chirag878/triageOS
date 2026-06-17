@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { UserButton } from "@/components/app/UserButton";
+import { CommandPalette } from "@/components/command/CommandPalette";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { requireUser } from "@/lib/auth/session";
@@ -34,6 +35,7 @@ export function AppShell({
 }) {
   return (
     <main className="min-h-screen overflow-hidden bg-[#f7f4ea] text-slate-950">
+      <CommandPalette />
       <div className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute left-[-12rem] top-[-8rem] size-[32rem] rounded-full bg-emerald-200/40 blur-3xl" />
         <div className="absolute right-[-10rem] top-32 size-[28rem] rounded-full bg-sky-200/40 blur-3xl" />
