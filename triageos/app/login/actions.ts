@@ -129,7 +129,8 @@ export async function signUpWithPassword(
 
   return {
     ok: true,
-    message: "Check your email to confirm your TriageOS account.",
+    message:
+      "Account created. If the email does not arrive, use Guest mode or disable email confirmations in Supabase for local demo.",
   };
 }
 
@@ -218,6 +219,30 @@ export async function updatePassword(
 
   if (error) {
     return { ok: false, message: error.message };
+  }
+
+  await ensureProfile();
+  redirect("/dashboard");
+}
+
+export async function continueAsGuest(): Promise<AuthState> {
+  const limited = rateLimitOrFail("guest", 10);
+  if (limited) return limited;
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInAnonymously({
+    options: { data: { full_name: "Guest workspace" } },
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      message:
+        error.message.includes("Anonymous sign-ins are disabled") ||
+        error.message.includes("anonymous")
+          ? "Guest mode is not enabled in Supabase. Enable Anonymous sign-ins or disable email confirmations for the hackathon demo."
+          : error.message,
+    };
   }
 
   await ensureProfile();

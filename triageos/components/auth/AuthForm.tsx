@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import { ArrowRight, Loader2, WandSparkles } from "lucide-react";
+import { ArrowRight, Loader2, UserRound, WandSparkles } from "lucide-react";
 import Link from "next/link";
 
 import {
+  continueAsGuest,
   sendMagicLink,
   signInWithPassword,
   signUpWithPassword,
@@ -32,6 +33,10 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
   );
   const [magicState, magicAction, magicPending] = useActionState(
     sendMagicLink,
+    initialState,
+  );
+  const [guestState, guestAction, guestPending] = useActionState(
+    continueAsGuest,
     initialState,
   );
 
@@ -105,6 +110,28 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
               </div>
             </div>
 
+            <form action={guestAction} className="space-y-3">
+              {guestState.message ? (
+                <AuthMessage ok={guestState.ok} message={guestState.message} />
+              ) : null}
+              <Button
+                disabled={guestPending}
+                variant="outline"
+                className="h-12 w-full rounded-2xl border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+              >
+                {guestPending ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <UserRound className="mr-2 size-4" />
+                )}
+                Continue in demo mode
+              </Button>
+              <p className="text-center text-xs leading-5 text-slate-500">
+                Use this if Supabase emails are delayed while you build the
+                demo.
+              </p>
+            </form>
+
             <form action={magicAction} className="space-y-4">
               <AuthField
                 label="Email magic link"
@@ -156,6 +183,11 @@ export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
                   message={signUpState.message}
                 />
               ) : null}
+              <p className="rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+                Not receiving confirmation mail? For hackathon speed, enable
+                Supabase Anonymous sign-ins and use demo mode, or turn off email
+                confirmations in Supabase Auth settings.
+              </p>
               <Button
                 disabled={signUpPending}
                 className="h-12 w-full rounded-2xl bg-emerald-700 hover:bg-emerald-800"

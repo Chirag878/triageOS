@@ -22,13 +22,14 @@ export async function getUser() {
 export async function ensureProfile() {
   const user = await getUser();
 
-  if (!user?.email) {
+  if (!user) {
     return null;
   }
 
-  const email = user.email.toLowerCase();
+  const email = (user.email ?? `${user.id}@guest.triageos.local`).toLowerCase();
+  const isGuest = !user.email;
   const adminEmails = getAdminEmails();
-  const role = adminEmails.includes(email) ? "admin" : "user";
+  const role = !isGuest && adminEmails.includes(email) ? "admin" : "user";
 
   const [profile] = await db
     .insert(profiles)
@@ -36,7 +37,9 @@ export async function ensureProfile() {
       id: user.id,
       email,
       fullName:
-        user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
+        user.user_metadata?.full_name ??
+        user.user_metadata?.name ??
+        (isGuest ? "Guest workspace" : null),
       avatarUrl: user.user_metadata?.avatar_url ?? null,
       role,
     })
@@ -45,7 +48,9 @@ export async function ensureProfile() {
       set: {
         email,
         fullName:
-          user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
+          user.user_metadata?.full_name ??
+          user.user_metadata?.name ??
+          (isGuest ? "Guest workspace" : null),
         avatarUrl: user.user_metadata?.avatar_url ?? null,
         role,
         updatedAt: new Date(),
