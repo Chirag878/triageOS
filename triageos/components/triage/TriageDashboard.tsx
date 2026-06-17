@@ -80,6 +80,8 @@ export function TriageDashboard({
   const [error, setError] = useState<string | null>(null);
   const [lastImported, setLastImported] = useState<number | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [executingId, setExecutingId] = useState<string | null>(null);
+  const [executionMessage, setExecutionMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const stats = useMemo(() => {
@@ -118,6 +120,7 @@ export function TriageDashboard({
   const analyzeItem = (triageItemId: string) => {
     startTransition(async () => {
       setError(null);
+      setExecutionMessage(null);
       setAnalyzingId(triageItemId);
 
       const response = await fetch("/api/triage/analyze", {
@@ -140,6 +143,51 @@ export function TriageDashboard({
         ),
       );
       setSelectedItem(payload.item);
+    });
+  };
+
+  const executeItem = (triageItemId: string) => {
+    if (
+      !window.confirm(
+        "Create the calendar event and Gmail draft for this workflow?",
+      )
+    ) {
+      return;
+    }
+
+    startTransition(async () => {
+      setError(null);
+      setExecutionMessage(null);
+      setExecutingId(triageItemId);
+
+      const response = await fetch("/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          triageItemId,
+          draftReply: true,
+          createEvent: true,
+          confirmed: true,
+        }),
+      });
+      const payload = (await response.json()) as ApiResponse;
+
+      setExecutingId(null);
+
+      if (!response.ok || payload.error || !payload.item) {
+        setError(payload.error ?? "Unable to execute workflow.");
+        return;
+      }
+
+      setItems((current) =>
+        current.map((item) =>
+          item.id === payload.item?.id ? payload.item : item,
+        ),
+      );
+      setSelectedItem(payload.item);
+      setExecutionMessage(
+        "Workflow executed: calendar event/draft actions were sent through Corsair.",
+      );
     });
   };
 
@@ -194,6 +242,11 @@ export function TriageDashboard({
               into TriageOS.
             </div>
           ) : null}
+          {executionMessage ? (
+            <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+              {executionMessage}
+            </div>
+          ) : null}
 
           {items.length === 0 ? (
             <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -225,11 +278,15 @@ export function TriageDashboard({
       <WorkflowDetailDialog
         item={selectedItem}
         isAnalyzing={Boolean(selectedItem && analyzingId === selectedItem.id)}
+        isExecuting={Boolean(selectedItem && executingId === selectedItem.id)}
         onOpenChange={(open) => {
           if (!open) setSelectedItem(null);
         }}
         onAnalyze={() => {
           if (selectedItem) analyzeItem(selectedItem.id);
+        }}
+        onExecute={() => {
+          if (selectedItem) executeItem(selectedItem.id);
         }}
       />
     </div>
@@ -338,13 +395,17 @@ function WorkflowCard({
 function WorkflowDetailDialog({
   item,
   isAnalyzing,
+  isExecuting,
   onOpenChange,
   onAnalyze,
+  onExecute,
 }: {
   item: TriageItem | null;
   isAnalyzing: boolean;
+  isExecuting: boolean;
   onOpenChange: (open: boolean) => void;
   onAnalyze: () => void;
+  onExecute: () => void;
 }) {
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
@@ -386,8 +447,8 @@ function WorkflowDetailDialog({
                     AI workflow card
                   </p>
                   <p className="mt-1 text-sm text-emerald-900">
-                    Generate a suggested reply and calendar action. Nothing is
-                    sent or scheduled until we add explicit execution.
+                    Generate a suggested reply and calendar action, then execute
+                    only after explicit confirmation.
                   </p>
                 </div>
                 <Button
@@ -404,6 +465,39 @@ function WorkflowDetailDialog({
                 </Button>
               </div>
             </section>
+
+            {item.suggestedReply ? (
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="font-black tracking-tight">
+                      Execute workflow
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Creates the suggested calendar event when present and
+                      saves a Gmail draft reply. This does not silently send
+                      email.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={onExecute}
+                    disabled={
+                      isExecuting || isAnalyzing || item.status === "completed"
+                    }
+                    className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
+                  >
+                    {isExecuting ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-2 size-4" />
+                    )}
+                    {item.status === "completed"
+                      ? "Completed"
+                      : "Create draft + event"}
+                  </Button>
+                </div>
+              </section>
+            ) : null}
 
             {item.autopilotScore ? (
               <section className="grid gap-3 md:grid-cols-3">
