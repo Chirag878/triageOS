@@ -1,8 +1,8 @@
 type ServerEnvKey =
   | "DATABASE_URL"
   | "SUPABASE_SERVICE_ROLE_KEY"
-  | "CORSAIR_API_KEY"
-  | "CORSAIR_CLIENT_SECRET"
+  | "CORSAIR_DEV_KEY"
+  | "CORSAIR_INSTANCE_ID"
   | "OPENAI_API_KEY"
   | "CORSAIR_WEBHOOK_SECRET";
 
@@ -41,10 +41,19 @@ export function getServerEnv() {
     ...getPublicEnv(),
     databaseUrl: readEnv("DATABASE_URL"),
     supabaseServiceRoleKey: readEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    corsairApiKey: readEnv("CORSAIR_API_KEY"),
-    corsairClientSecret: readEnv("CORSAIR_CLIENT_SECRET"),
+    corsairApiKey: readEnv("CORSAIR_DEV_KEY"),
+    corsairClientSecret: readEnv("CORSAIR_INSTANCE_ID"),
     corsairWebhookSecret: readEnv("CORSAIR_WEBHOOK_SECRET"),
     openaiApiKey: readEnv("OPENAI_API_KEY"),
     adminEmails: getAdminEmails(),
+  };
+}
+
+
+export function getCorsairEnv() {
+  return {
+    corsairDevKey: readEnv("CORSAIR_DEV_KEY"),
+    corsairInstanceId: readEnv("CORSAIR_INSTANCE_ID"),
+    corsairWebhookSecret: process.env.CORSAIR_WEBHOOK_SECRET,
   };
 }
