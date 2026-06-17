@@ -1,6 +1,6 @@
 export const CORSAIR_PLUGIN_IDS = {
-  gmail: "gmail",
-  calendar: "googlecalendar",
+  gmail: "Gmail",
+  calendar: "Google Calendar",
 } as const;
 
 export const CORSAIR_CONNECT_RETURN_PATH = "/onboarding";
