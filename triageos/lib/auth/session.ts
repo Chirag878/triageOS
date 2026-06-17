@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { getAdminEmails } from "@/config/env";
-import { getServerEnv } from "@/config/env";
 import { db } from "@/db/client";
 import { profiles, usageCounters, userPreferences } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
@@ -29,7 +28,6 @@ export async function ensureProfile() {
 
   const email = user.email.toLowerCase();
   const adminEmails = getAdminEmails();
-  const adminEmails = getServerEnv().adminEmails;
   const role = adminEmails.includes(email) ? "admin" : "user";
 
   const [profile] = await db

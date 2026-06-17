@@ -5,9 +5,6 @@ import { redirect } from "next/navigation";
 
 import { getPublicEnv } from "@/config/env";
 import { checkRateLimit } from "@/lib/auth/rate-limit";
-import { redirect } from "next/navigation";
-
-import { getPublicEnv } from "@/config/env";
 import { ensureProfile } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -84,15 +81,6 @@ export async function signInWithPassword(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
-  const email = formValue(formData, "email").toLowerCase();
-  const password = formValue(formData, "password");
-
-  if (!email || !password) {
-    return { ok: false, message: "Email and password are required." };
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
     return { ok: false, message: error.message };
@@ -118,17 +106,6 @@ export async function signUpWithPassword(
 
   const limited = rateLimitOrFail(`signup:${parsed.data.email}`, 3);
   if (limited) return limited;
-  const fullName = formValue(formData, "fullName");
-  const email = formValue(formData, "email").toLowerCase();
-  const password = formValue(formData, "password");
-
-  if (!email || !password) {
-    return { ok: false, message: "Email and password are required." };
-  }
-
-  if (password.length < 8) {
-    return { ok: false, message: "Password must be at least 8 characters." };
-  }
 
   const supabase = await createClient();
   const env = getPublicEnv();
@@ -138,11 +115,6 @@ export async function signUpWithPassword(
     options: {
       emailRedirectTo: `${env.appUrl}/auth/callback?next=/dashboard`,
       data: { full_name: parsed.data.fullName || null },
-    email,
-    password,
-    options: {
-      emailRedirectTo: `${env.appUrl}/auth/callback?next=/dashboard`,
-      data: { full_name: fullName || null },
     },
   });
 

@@ -9,9 +9,6 @@ import {
   signInWithPassword,
   signUpWithPassword,
 } from "@/app/login/actions";
-import { ArrowRight, Loader2 } from "lucide-react";
-
-import { signInWithPassword, signUpWithPassword } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,7 +22,6 @@ type AuthFormProps = {
 };
 
 export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
-export function AuthForm() {
   const [signInState, signInAction, signInPending] = useActionState(
     signInWithPassword,
     initialState,
@@ -42,7 +38,7 @@ export function AuthForm() {
   return (
     <Card className="w-full max-w-md rounded-[2rem] border-white/70 bg-white/80 shadow-2xl shadow-emerald-950/10 backdrop-blur-xl">
       <CardHeader className="p-7 pb-3">
-        <CardTitle className="text-3xl font-black tracking-[-0.04em]">
+        <CardTitle className="text-3xl font-black tracking-tight">
           Enter TriageOS
         </CardTitle>
         <p className="text-sm leading-6 text-slate-600">
@@ -52,7 +48,6 @@ export function AuthForm() {
       </CardHeader>
       <CardContent className="p-7 pt-4">
         <Tabs defaultValue={defaultTab} className="w-full">
-        <Tabs defaultValue="signin" className="w-full">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl bg-emerald-50">
             <TabsTrigger value="signin" className="rounded-xl">
               Sign in
@@ -63,7 +58,6 @@ export function AuthForm() {
           </TabsList>
 
           <TabsContent value="signin" className="mt-6 space-y-5">
-          <TabsContent value="signin" className="mt-6">
             <form action={signInAction} className="space-y-4">
               <AuthField
                 label="Email"
@@ -75,7 +69,7 @@ export function AuthForm() {
                 label="Password"
                 name="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="Password"
               />
               <div className="flex justify-end">
                 <Link
@@ -195,9 +189,6 @@ function AuthField({
       <Label htmlFor={`${label}-${name}`}>{label}</Label>
       <Input
         id={`${label}-${name}`}
-      <Label htmlFor={name}>{label}</Label>
-      <Input
-        id={name}
         name={name}
         type={type}
         placeholder={placeholder}

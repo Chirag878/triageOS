@@ -41,16 +41,5 @@ export async function GET(request: NextRequest) {
 
   await ensureProfile();
 
-  const next = requestUrl.searchParams.get("next") ?? "/dashboard";
-
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-    if (!error) {
-      await ensureProfile();
-    }
-  }
-
   return NextResponse.redirect(new URL(next, requestUrl.origin));
 }
