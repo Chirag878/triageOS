@@ -64,6 +64,22 @@ export default async function DashboardPage() {
               priorityLabel: item.priorityLabel,
               priorityScore: item.priorityScore,
               summary: item.summary,
+              suggestedReply: item.suggestedReply,
+              suggestedCalendarAction: item.suggestedCalendarAction as {
+                type: string;
+                title: string | null;
+                attendees: string[];
+                startTime: string | null;
+                durationMinutes: number | null;
+                timezone: string | null;
+                description: string | null;
+              } | null,
+              autopilotScore: item.autopilotScore as {
+                confidence: number;
+                estimatedMinutesSaved: number;
+                reasoning: string;
+              } | null,
+              changeSummary: item.changeSummary,
               status: item.status,
               intentTimeline: Array.isArray(item.intentTimeline)
                 ? (item.intentTimeline as string[])

@@ -2,9 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
+  Bot,
   CalendarClock,
   CheckCircle2,
   Clock3,
+  Copy,
   Inbox,
   Loader2,
   MailCheck,
@@ -15,6 +17,30 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+
+type SuggestedCalendarAction = {
+  type: string;
+  title: string | null;
+  attendees: string[];
+  startTime: string | null;
+  durationMinutes: number | null;
+  timezone: string | null;
+  description: string | null;
+} | null;
+
+type AutopilotScore = {
+  confidence: number;
+  estimatedMinutesSaved: number;
+  reasoning: string;
+} | null;
 
 type TriageItem = {
   id: string;
@@ -28,6 +54,10 @@ type TriageItem = {
   priorityLabel: string;
   priorityScore: number;
   summary: string | null;
+  suggestedReply: string | null;
+  suggestedCalendarAction: SuggestedCalendarAction;
+  autopilotScore: AutopilotScore;
+  changeSummary: string | null;
   status: string;
   intentTimeline: string[];
   memoryHint: string | null;
@@ -35,6 +65,7 @@ type TriageItem = {
 
 type ApiResponse = {
   items?: TriageItem[];
+  item?: TriageItem;
   imported?: number;
   error?: string;
 };
@@ -45,8 +76,10 @@ export function TriageDashboard({
   initialItems: TriageItem[];
 }) {
   const [items, setItems] = useState(initialItems);
+  const [selectedItem, setSelectedItem] = useState<TriageItem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastImported, setLastImported] = useState<number | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const stats = useMemo(() => {
@@ -82,6 +115,34 @@ export function TriageDashboard({
     });
   };
 
+  const analyzeItem = (triageItemId: string) => {
+    startTransition(async () => {
+      setError(null);
+      setAnalyzingId(triageItemId);
+
+      const response = await fetch("/api/triage/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triageItemId }),
+      });
+      const payload = (await response.json()) as ApiResponse;
+
+      setAnalyzingId(null);
+
+      if (!response.ok || payload.error || !payload.item) {
+        setError(payload.error ?? "Unable to generate AI workflow card.");
+        return;
+      }
+
+      setItems((current) =>
+        current.map((item) =>
+          item.id === payload.item?.id ? payload.item : item,
+        ),
+      );
+      setSelectedItem(payload.item);
+    });
+  };
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-3">
@@ -104,8 +165,8 @@ export function TriageDashboard({
               Triage queue
             </CardTitle>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Pull recent Gmail messages into reviewable workflow cards. AI
-              generation comes next; this first pass proves real data ingestion.
+              Open a card to see the email detail, generate a suggested reply,
+              and review meeting actions before execution.
             </p>
           </div>
           <Button
@@ -113,7 +174,7 @@ export function TriageDashboard({
             disabled={isPending}
             className="rounded-full bg-slate-950 px-5 text-white hover:bg-slate-800"
           >
-            {isPending ? (
+            {isPending && !analyzingId ? (
               <Loader2 className="mr-2 size-4 animate-spin" />
             ) : (
               <RefreshCw className="mr-2 size-4" />
@@ -148,12 +209,29 @@ export function TriageDashboard({
           ) : (
             <div className="grid gap-4">
               {items.map((item) => (
-                <WorkflowCard key={item.id} item={item} />
+                <WorkflowCard
+                  key={item.id}
+                  item={item}
+                  isAnalyzing={analyzingId === item.id}
+                  onAnalyze={() => analyzeItem(item.id)}
+                  onOpen={() => setSelectedItem(item)}
+                />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <WorkflowDetailDialog
+        item={selectedItem}
+        isAnalyzing={Boolean(selectedItem && analyzingId === selectedItem.id)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedItem(null);
+        }}
+        onAnalyze={() => {
+          if (selectedItem) analyzeItem(selectedItem.id);
+        }}
+      />
     </div>
   );
 }
@@ -182,11 +260,21 @@ function StatCard({
   );
 }
 
-function WorkflowCard({ item }: { item: TriageItem }) {
+function WorkflowCard({
+  item,
+  isAnalyzing,
+  onAnalyze,
+  onOpen,
+}: {
+  item: TriageItem;
+  isAnalyzing: boolean;
+  onAnalyze: () => void;
+  onOpen: () => void;
+}) {
   return (
     <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 flex-1">
+        <button className="min-w-0 flex-1 text-left" onClick={onOpen}>
           <div className="flex flex-wrap items-center gap-2">
             <PriorityBadge label={item.priorityLabel} />
             <Badge variant="outline" className="rounded-full capitalize">
@@ -195,6 +283,11 @@ function WorkflowCard({ item }: { item: TriageItem }) {
             <Badge variant="outline" className="rounded-full capitalize">
               {item.recommendedAction.replaceAll("_", " ")}
             </Badge>
+            {item.autopilotScore ? (
+              <Badge className="rounded-full bg-purple-100 text-purple-800 hover:bg-purple-100">
+                {Math.round(item.autopilotScore.confidence * 100)}% confidence
+              </Badge>
+            ) : null}
           </div>
           <h3 className="mt-3 truncate text-xl font-black tracking-tight">
             {item.subject}
@@ -203,15 +296,25 @@ function WorkflowCard({ item }: { item: TriageItem }) {
           <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-700">
             {item.summary ?? item.snippet ?? item.bodyPreview}
           </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-          <Clock3 className="size-3.5" />
-          {new Intl.DateTimeFormat(undefined, {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          }).format(new Date(item.receivedAt))}
+        </button>
+        <div className="flex shrink-0 flex-col items-start gap-3 md:items-end">
+          <div className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+            <Clock3 className="size-3.5" />
+            {formatDate(item.receivedAt)}
+          </div>
+          <Button
+            onClick={onAnalyze}
+            disabled={isAnalyzing}
+            className="rounded-full bg-emerald-600 text-white hover:bg-emerald-500"
+            size="sm"
+          >
+            {isAnalyzing ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Bot className="mr-2 size-4" />
+            )}
+            {item.suggestedReply ? "Regenerate AI" : "Generate AI"}
+          </Button>
         </div>
       </div>
 
@@ -232,6 +335,201 @@ function WorkflowCard({ item }: { item: TriageItem }) {
   );
 }
 
+function WorkflowDetailDialog({
+  item,
+  isAnalyzing,
+  onOpenChange,
+  onAnalyze,
+}: {
+  item: TriageItem | null;
+  isAnalyzing: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAnalyze: () => void;
+}) {
+  return (
+    <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[2rem] p-0 sm:max-w-3xl">
+        {item ? (
+          <div className="space-y-6 p-6">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black tracking-tight">
+                {item.subject}
+              </DialogTitle>
+              <DialogDescription>
+                From {item.fromEmail} · {formatDate(item.receivedAt)}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-wrap gap-2">
+              <PriorityBadge label={item.priorityLabel} />
+              <Badge variant="outline" className="rounded-full capitalize">
+                {item.workflowType.replaceAll("_", " ")}
+              </Badge>
+              <Badge variant="outline" className="rounded-full capitalize">
+                {item.recommendedAction.replaceAll("_", " ")}
+              </Badge>
+            </div>
+
+            <section className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                Email detail
+              </p>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                {item.bodyPreview ?? item.snippet}
+              </p>
+            </section>
+
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
+                    AI workflow card
+                  </p>
+                  <p className="mt-1 text-sm text-emerald-900">
+                    Generate a suggested reply and calendar action. Nothing is
+                    sent or scheduled until we add explicit execution.
+                  </p>
+                </div>
+                <Button
+                  onClick={onAnalyze}
+                  disabled={isAnalyzing}
+                  className="rounded-full bg-emerald-600 text-white hover:bg-emerald-500"
+                >
+                  {isAnalyzing ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 size-4" />
+                  )}
+                  {item.suggestedReply ? "Regenerate" : "Generate"}
+                </Button>
+              </div>
+            </section>
+
+            {item.autopilotScore ? (
+              <section className="grid gap-3 md:grid-cols-3">
+                <InfoPill
+                  label="Confidence"
+                  value={`${Math.round(item.autopilotScore.confidence * 100)}%`}
+                />
+                <InfoPill
+                  label="Time saved"
+                  value={`${item.autopilotScore.estimatedMinutesSaved} min`}
+                />
+                <InfoPill label="Priority" value={`${item.priorityScore}/10`} />
+              </section>
+            ) : null}
+
+            {item.summary ? (
+              <section>
+                <h3 className="font-black tracking-tight">Summary</h3>
+                <p className="mt-2 text-sm leading-7 text-slate-700">
+                  {item.summary}
+                </p>
+              </section>
+            ) : null}
+
+            {item.suggestedReply ? (
+              <section>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="font-black tracking-tight">Suggested reply</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() =>
+                      navigator.clipboard.writeText(item.suggestedReply ?? "")
+                    }
+                  >
+                    <Copy className="mr-2 size-3.5" /> Copy
+                  </Button>
+                </div>
+                <Textarea
+                  readOnly
+                  value={item.suggestedReply}
+                  className="min-h-32 bg-white"
+                />
+              </section>
+            ) : null}
+
+            {item.suggestedCalendarAction?.type &&
+            item.suggestedCalendarAction.type !== "none" ? (
+              <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <h3 className="font-black tracking-tight text-blue-950">
+                  Suggested calendar action
+                </h3>
+                <dl className="mt-3 grid gap-2 text-sm text-blue-950 md:grid-cols-2">
+                  <DetailRow
+                    label="Title"
+                    value={item.suggestedCalendarAction.title}
+                  />
+                  <DetailRow
+                    label="Start"
+                    value={
+                      item.suggestedCalendarAction.startTime
+                        ? formatDate(item.suggestedCalendarAction.startTime)
+                        : null
+                    }
+                  />
+                  <DetailRow
+                    label="Duration"
+                    value={
+                      item.suggestedCalendarAction.durationMinutes
+                        ? `${item.suggestedCalendarAction.durationMinutes} min`
+                        : null
+                    }
+                  />
+                  <DetailRow
+                    label="Attendees"
+                    value={item.suggestedCalendarAction.attendees.join(", ")}
+                  />
+                </dl>
+              </section>
+            ) : null}
+
+            {item.intentTimeline.length > 0 ? (
+              <section>
+                <h3 className="font-black tracking-tight">Intent timeline</h3>
+                <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                  {item.intentTimeline.map((step, index) => (
+                    <li key={`${item.id}-detail-${step}`}>
+                      <span className="font-bold text-slate-950">
+                        {index + 1}.
+                      </span>{" "}
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-100 p-4">
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black tracking-tight">{value}</p>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">
+        {label}
+      </dt>
+      <dd className="mt-1">{value || "—"}</dd>
+    </div>
+  );
+}
+
 function PriorityBadge({ label }: { label: string }) {
   const classes =
     {
@@ -244,4 +542,13 @@ function PriorityBadge({ label }: { label: string }) {
   return (
     <Badge className={`rounded-full capitalize ${classes}`}>{label}</Badge>
   );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
