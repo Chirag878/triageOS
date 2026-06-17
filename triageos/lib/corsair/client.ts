@@ -211,8 +211,7 @@ export class CorsairClient {
 
     if (!response.ok) {
       throw new CorsairError(
-        getErrorMessage(payload) ??
-          `Corsair REST request failed with status ${response.status}. If this is a 404, install @corsair-dev/app and set CORSAIR_DRIVER=sdk, or update lib/corsair/client.ts to match Corsair's current REST path.`,
+        explainCorsairHttpError(response.status, payload, this.instanceId),
         response.status,
         payload,
       );
@@ -276,6 +275,39 @@ function tryParseJson(text: string) {
   } catch {
     return { raw: text };
   }
+}
+
+function explainCorsairHttpError(
+  status: number,
+  payload: unknown,
+  instanceId: string,
+) {
+  const message = getErrorMessage(payload);
+  const lowerMessage = message?.toLowerCase() ?? "";
+
+  if (
+    status === 404 &&
+    lowerMessage.includes("instance") &&
+    lowerMessage.includes("not found")
+  ) {
+    return `${message}
+
+Your CORSAIR_INSTANCE_ID is currently "${instanceId}". This must be the real Corsair instance ID from the Corsair dashboard, not the display name/app name. Also make sure CORSAIR_DEV_KEY belongs to the same Corsair workspace that owns that instance.`;
+  }
+
+  if (status === 401 || status === 403) {
+    return `${message ?? `Corsair request failed with status ${status}.`}
+
+Check CORSAIR_DEV_KEY. It must be a valid developer key with access to CORSAIR_INSTANCE_ID.`;
+  }
+
+  if (status === 404) {
+    return `${message ?? "Corsair REST endpoint was not found."}
+
+If you installed @corsair-dev/app, set CORSAIR_DRIVER=sdk. If using REST, update lib/corsair/client.ts to match Corsair's current REST path.`;
+  }
+
+  return message ?? `Corsair request failed with status ${status}.`;
 }
 
 function getErrorMessage(payload: unknown) {
