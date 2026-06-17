@@ -59,6 +59,71 @@ export default function Home() {
             <a href="#pricing-preview">Pricing</a>
             <a href="#theme">Theme</a>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              asChild
+              variant="ghost"
+              className="hidden rounded-full sm:inline-flex"
+            >
+              <Link href="/login">Sign in</Link>
+            </Button>
+            <Button
+              asChild
+              className="rounded-full bg-slate-950 hover:bg-slate-800"
+            >
+              <Link href="/signup">Register</Link>
+            </Button>
+          </div>
+        </nav>
+
+        <div className="mx-auto grid max-w-7xl items-center gap-12 py-16 lg:grid-cols-[0.95fr_1.05fr] lg:py-24">
+          <div>
+            <Badge className="rounded-full border-emerald-200 bg-emerald-100 px-4 py-1.5 text-emerald-800 hover:bg-emerald-100">
+              <Sparkles className="mr-1.5 size-3.5" /> Gen-Z calm mode for Gmail
+              + Calendar
+            </Badge>
+            <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.95] tracking-[-0.06em] text-slate-950 sm:text-7xl lg:text-8xl">
+              Turn every important email into a confirmed next action.
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 sm:text-xl">
+              TriageOS is an AI command center with soft nature energy: Gmail
+              shows messages, Calendar shows events, TriageOS shows decisions.
+            </p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Button
+                asChild
+                size="lg"
+                className="h-14 rounded-full bg-slate-950 px-7 text-base hover:bg-slate-800"
+              >
+                <Link href="/signup">
+                  Register free <ArrowRight className="ml-2 size-4" />
+                </Link>
+              </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="h-14 rounded-full border-slate-300 bg-white/70 px-7 text-base"
+              >
+                <Link href="/login">Sign in</Link>
+              </Button>
+            </div>
+          </div>
+
+          <div className="relative min-h-[620px]">
+            <MountainScene />
+            <WorkflowMockup />
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" className="px-6 pb-20 sm:px-10 lg:px-16">
+        <div className="mx-auto grid max-w-7xl gap-5 md:grid-cols-3">
+          {cards.map((card) => (
+            <Card
+              key={card.title}
+              className="rounded-[2rem] border-white/70 bg-white/70 shadow-sm backdrop-blur-xl"
+            >
           <Button
             asChild
             className="rounded-full bg-slate-950 hover:bg-slate-800"

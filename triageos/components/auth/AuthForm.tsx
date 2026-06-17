@@ -1,6 +1,14 @@
 "use client";
 
 import { useActionState } from "react";
+import { ArrowRight, Loader2, WandSparkles } from "lucide-react";
+import Link from "next/link";
+
+import {
+  sendMagicLink,
+  signInWithPassword,
+  signUpWithPassword,
+} from "@/app/login/actions";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 import { signInWithPassword, signUpWithPassword } from "@/app/login/actions";
@@ -12,6 +20,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const initialState = { ok: false, message: "" };
 
+type AuthFormProps = {
+  defaultTab?: "signin" | "signup";
+};
+
+export function AuthForm({ defaultTab = "signin" }: AuthFormProps) {
 export function AuthForm() {
   const [signInState, signInAction, signInPending] = useActionState(
     signInWithPassword,
@@ -19,6 +32,10 @@ export function AuthForm() {
   );
   const [signUpState, signUpAction, signUpPending] = useActionState(
     signUpWithPassword,
+    initialState,
+  );
+  const [magicState, magicAction, magicPending] = useActionState(
+    sendMagicLink,
     initialState,
   );
 
@@ -34,6 +51,7 @@ export function AuthForm() {
         </p>
       </CardHeader>
       <CardContent className="p-7 pt-4">
+        <Tabs defaultValue={defaultTab} className="w-full">
         <Tabs defaultValue="signin" className="w-full">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl bg-emerald-50">
             <TabsTrigger value="signin" className="rounded-xl">
@@ -44,6 +62,7 @@ export function AuthForm() {
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="signin" className="mt-6 space-y-5">
           <TabsContent value="signin" className="mt-6">
             <form action={signInAction} className="space-y-4">
               <AuthField
@@ -58,6 +77,14 @@ export function AuthForm() {
                 type="password"
                 placeholder="••••••••"
               />
+              <div className="flex justify-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-bold text-emerald-700 hover:text-emerald-900"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               {signInState.message ? (
                 <AuthMessage
                   ok={signInState.ok}
@@ -72,6 +99,39 @@ export function AuthForm() {
                   <Loader2 className="mr-2 size-4 animate-spin" />
                 ) : null}
                 Sign in <ArrowRight className="ml-2 size-4" />
+              </Button>
+            </form>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-slate-500">or</span>
+              </div>
+            </div>
+
+            <form action={magicAction} className="space-y-4">
+              <AuthField
+                label="Email magic link"
+                name="email"
+                type="email"
+                placeholder="you@company.com"
+              />
+              {magicState.message ? (
+                <AuthMessage ok={magicState.ok} message={magicState.message} />
+              ) : null}
+              <Button
+                disabled={magicPending}
+                variant="outline"
+                className="h-12 w-full rounded-2xl bg-white/70"
+              >
+                {magicPending ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <WandSparkles className="mr-2 size-4" />
+                )}
+                Send magic link
               </Button>
             </form>
           </TabsContent>
@@ -132,6 +192,9 @@ function AuthField({
 }) {
   return (
     <div className="space-y-2">
+      <Label htmlFor={`${label}-${name}`}>{label}</Label>
+      <Input
+        id={`${label}-${name}`}
       <Label htmlFor={name}>{label}</Label>
       <Input
         id={name}

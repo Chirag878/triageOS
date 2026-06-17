@@ -1,12 +1,8 @@
-import { AuthShell } from "@/components/auth/AuthShell";
-
-export default function LoginPage() {
-  return <AuthShell mode="signin" />;
 import Link from "next/link";
 
 import { AuthForm } from "@/components/auth/AuthForm";
 
-export default function LoginPage() {
+export function AuthShell({ mode = "signin" }: { mode?: "signin" | "signup" }) {
   return (
     <main className="min-h-screen overflow-hidden bg-[#f7f4ea] px-6 py-6 text-slate-950 sm:px-10 lg:px-16">
       <div className="nature-orb left-[-8rem] top-[-8rem] bg-emerald-300/40" />
@@ -52,7 +48,7 @@ export default function LoginPage() {
             </ol>
           </div>
         </div>
-        <AuthForm />
+        <AuthForm defaultTab={mode} />
       </section>
     </main>
   );
