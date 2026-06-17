@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "corsair:callback": "node scripts/corsair-callback-url.mjs",
+    "corsair:google-oauth": "node scripts/corsair-configure-google-oauth.mjs"
   },
   "dependencies": {
     "@corsair-dev/app": "^0.1.5",
