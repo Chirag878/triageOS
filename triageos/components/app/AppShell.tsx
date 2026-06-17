@@ -41,7 +41,7 @@ export function AppShell({
       </div>
 
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <aside className="hidden border-r border-white/70 bg-white/55 p-5 shadow-sm backdrop-blur-2xl lg:block">
+        <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-white/70 bg-white/55 p-5 shadow-sm backdrop-blur-2xl lg:block">
           <Link href="/dashboard" className="flex items-center gap-3">
             <span className="grid size-11 place-items-center rounded-2xl bg-slate-950 text-xl text-white shadow-lg shadow-slate-900/15">
               🐼
@@ -121,6 +121,27 @@ export function AppShell({
               <UserButton profile={profile} />
             </div>
           </header>
+
+          <nav className="mx-auto mt-4 flex max-w-7xl gap-2 overflow-x-auto pb-2 lg:hidden">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = active === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition ${
+                    isActive
+                      ? "border-slate-950 bg-slate-950 text-white"
+                      : "border-white/80 bg-white/70 text-slate-600"
+                  }`}
+                >
+                  <Icon className="size-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
 
           <div className="mx-auto max-w-7xl py-8">{children}</div>
         </section>
