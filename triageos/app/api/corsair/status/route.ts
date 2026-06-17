@@ -39,7 +39,7 @@ export async function GET() {
       remoteStatus,
     });
   } catch (error) {
-    const status = error instanceof CorsairError && error.status ? 502 : 500;
+    const status = error instanceof CorsairError ? 502 : 500;
     const message =
       error instanceof Error ? error.message : "Failed to load Corsair status.";
 

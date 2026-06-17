@@ -11,12 +11,21 @@ type SdkTenant = {
   status?: () => Promise<unknown>;
 };
 
-type SdkModule = {
-  createClient?: (options: { apiKey: string }) => {
-    instance: (instanceId: string) => {
-      tenant: (tenantId: string) => SdkTenant;
-    };
+type SdkCreateClient = (options: { apiKey: string }) => {
+  instance: (instanceId: string) => {
+    tenant: (tenantId: string) => SdkTenant;
   };
+};
+
+type SdkModule = {
+  createClient?: SdkCreateClient;
+  Corsair?: new (options: { apiKey: string }) => ReturnType<SdkCreateClient>;
+  default?:
+    | SdkCreateClient
+    | {
+        createClient?: SdkCreateClient;
+      }
+    | (new (options: { apiKey: string }) => ReturnType<SdkCreateClient>);
 };
 
 export class CorsairError extends Error {
@@ -229,20 +238,30 @@ export class CorsairClient {
 
     const sdk = await loadCorsairSdk();
 
-    if (!sdk?.createClient) {
+    const createClient = sdk ? resolveSdkCreateClient(sdk) : null;
+
+    if (!createClient) {
       if (this.driver === "sdk") {
         throw new CorsairError(
-          `CORSAIR_DRIVER=sdk but @corsair-dev/app could not be loaded for Corsair ${operation}. Install @corsair-dev/app or set CORSAIR_DRIVER=rest.`,
+          `CORSAIR_DRIVER=sdk but @corsair-dev/app could not be loaded or did not expose a supported client factory for Corsair ${operation}. Export keys: ${sdk ? Object.keys(sdk).join(", ") || "none" : "package not found"}.`,
         );
       }
 
       return null;
     }
 
-    const corsair = sdk.createClient({ apiKey: this.apiKey });
-    const tenant = corsair.instance(this.instanceId).tenant(tenantId);
+    try {
+      const corsair = createClient({ apiKey: this.apiKey });
+      const tenant = corsair.instance(this.instanceId).tenant(tenantId);
 
-    return callback(tenant);
+      return await callback(tenant);
+    } catch (error) {
+      if (this.driver === "auto" && isSdkShapeError(error)) {
+        return null;
+      }
+
+      throw explainSdkError(error, operation, this.instanceId);
+    }
   }
 }
 
@@ -267,6 +286,79 @@ async function loadCorsairSdk(): Promise<SdkModule | null> {
   } catch {
     return null;
   }
+}
+
+function resolveSdkCreateClient(sdk: SdkModule): SdkCreateClient | null {
+  if (typeof sdk.createClient === "function") return sdk.createClient;
+
+  if (
+    sdk.default &&
+    typeof sdk.default === "object" &&
+    "createClient" in sdk.default
+  ) {
+    const maybeCreateClient = sdk.default.createClient;
+    if (typeof maybeCreateClient === "function") return maybeCreateClient;
+  }
+
+  if (typeof sdk.default === "function") {
+    return (options) => {
+      try {
+        return (sdk.default as SdkCreateClient)(options);
+      } catch {
+        const Constructor = sdk.default as new (constructorOptions: {
+          apiKey: string;
+        }) => ReturnType<SdkCreateClient>;
+        return new Constructor(options);
+      }
+    };
+  }
+
+  if (typeof sdk.Corsair === "function") {
+    return (options) => new sdk.Corsair!(options);
+  }
+
+  return null;
+}
+
+function isSdkShapeError(error: unknown) {
+  return (
+    error instanceof CorsairError && error.message.includes("does not expose")
+  );
+}
+
+function explainSdkError(
+  error: unknown,
+  operation: string,
+  instanceId: string,
+) {
+  if (error instanceof CorsairError) return error;
+
+  if (error instanceof Error) {
+    const lowerMessage = error.message.toLowerCase();
+
+    if (
+      lowerMessage.includes("instance") &&
+      lowerMessage.includes("not found")
+    ) {
+      return new CorsairError(
+        `${error.message}\n\nYour CORSAIR_INSTANCE_ID is currently "${instanceId}". Use the real instance ID from Corsair dashboard, not the display name. Also verify CORSAIR_DEV_KEY belongs to that same workspace.`,
+        404,
+        { operation },
+      );
+    }
+
+    return new CorsairError(
+      `${error.message}\n\nCorsair SDK operation failed while running ${operation}.`,
+      undefined,
+      { operation },
+    );
+  }
+
+  return new CorsairError(
+    `Corsair SDK operation failed while running ${operation}.`,
+    undefined,
+    { operation, error },
+  );
 }
 
 function tryParseJson(text: string) {
