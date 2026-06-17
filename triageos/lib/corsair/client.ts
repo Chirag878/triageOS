@@ -11,11 +11,22 @@ type SdkTenant = {
   status?: () => Promise<unknown>;
 };
 
-type SdkCreateClient = (options: { apiKey: string }) => {
+type SdkInstanceSummary = {
+  id: string;
+  name: string;
+};
+
+type SdkClient = {
+  instances?: {
+    list: () => Promise<{ instances?: SdkInstanceSummary[] }>;
+    create: (input: { name: string }) => Promise<{ id: string; name: string }>;
+  };
   instance: (instanceId: string) => {
     tenant: (tenantId: string) => SdkTenant;
   };
 };
+
+type SdkCreateClient = (options: { apiKey: string }) => SdkClient;
 
 type SdkModule = {
   createClient?: SdkCreateClient;
@@ -76,14 +87,17 @@ export function getCorsairTenantId(userId: string) {
 export class CorsairClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
-  private readonly instanceId: string;
+  private readonly configuredInstanceId: string;
+  private readonly instanceName: string;
   private readonly driver: CorsairDriver;
+  private resolvedInstanceIdPromise: Promise<string> | null = null;
 
   constructor() {
     const env = requireCorsairEnv();
     this.baseUrl = normalizeBaseUrl(env.apiBaseUrl);
     this.apiKey = env.apiKey;
-    this.instanceId = env.instanceId;
+    this.configuredInstanceId = env.instanceId;
+    this.instanceName = sanitizeInstanceName(env.instanceName);
     this.driver = parseDriver(env.driver);
   }
 
@@ -113,7 +127,7 @@ export class CorsairClient {
       sdkPayload ??
       (await this.request<JsonRecord>(
         "POST",
-        this.tenantPath(input.tenantId, "connect-link"),
+        await this.tenantPath(input.tenantId, "connect-link"),
         {
           plugins: input.plugins,
           returnUrl: input.returnUrl,
@@ -161,7 +175,7 @@ export class CorsairClient {
     return (sdkPayload ??
       (await this.request<CorsairRunResult<TData>>(
         "POST",
-        this.tenantPath(input.tenantId, "run"),
+        await this.tenantPath(input.tenantId, "run"),
         {
           path: input.path,
           input: input.payload ?? {},
@@ -186,12 +200,14 @@ export class CorsairClient {
 
     return (
       sdkPayload ??
-      this.request<JsonRecord>("GET", this.tenantPath(tenantId, "status"))
+      this.request<JsonRecord>("GET", await this.tenantPath(tenantId, "status"))
     );
   }
 
-  private tenantPath(tenantId: string, action: string) {
-    return `/instances/${encodeURIComponent(this.instanceId)}/tenants/${encodeURIComponent(tenantId)}/${action}`;
+  private async tenantPath(tenantId: string, action: string) {
+    const instanceId = await this.resolveInstanceId();
+
+    return `/instances/${encodeURIComponent(instanceId)}/tenants/${encodeURIComponent(tenantId)}/${action}`;
   }
 
   private async request<TResponse>(
@@ -219,8 +235,10 @@ export class CorsairClient {
     const payload = text ? tryParseJson(text) : null;
 
     if (!response.ok) {
+      const instanceId = await this.resolveInstanceId();
+
       throw new CorsairError(
-        explainCorsairHttpError(response.status, payload, this.instanceId),
+        explainCorsairHttpError(response.status, payload, instanceId),
         response.status,
         payload,
       );
@@ -252,7 +270,8 @@ export class CorsairClient {
 
     try {
       const corsair = createClient({ apiKey: this.apiKey });
-      const tenant = corsair.instance(this.instanceId).tenant(tenantId);
+      const instanceId = await this.resolveInstanceId(corsair);
+      const tenant = corsair.instance(instanceId).tenant(tenantId);
 
       return await callback(tenant);
     } catch (error) {
@@ -260,8 +279,118 @@ export class CorsairClient {
         return null;
       }
 
-      throw explainSdkError(error, operation, this.instanceId);
+      throw explainSdkError(
+        error,
+        operation,
+        this.configuredInstanceId || this.instanceName,
+      );
     }
+  }
+
+  private resolveInstanceId(sdkClient?: SdkClient) {
+    if (this.configuredInstanceId) {
+      return Promise.resolve(this.configuredInstanceId);
+    }
+
+    this.resolvedInstanceIdPromise ??= this.findOrCreateInstance(sdkClient);
+
+    return this.resolvedInstanceIdPromise;
+  }
+
+  private async findOrCreateInstance(sdkClient?: SdkClient) {
+    if (this.driver !== "rest") {
+      const client = sdkClient ?? (await this.createSdkClient());
+
+      if (client?.instances?.list && client.instances.create) {
+        const { instances = [] } = await client.instances.list();
+        const existing = instances.find(
+          (instance) => instance.name === this.instanceName,
+        );
+
+        if (existing?.id) return existing.id;
+
+        const created = await client.instances.create({
+          name: this.instanceName,
+        });
+
+        if (created.id) return created.id;
+      }
+
+      if (this.driver === "sdk") {
+        throw new CorsairError(
+          "CORSAIR_INSTANCE_ID is empty and the installed Corsair SDK does not expose instances.list/create. Set CORSAIR_INSTANCE_ID manually or update @corsair-dev/app.",
+        );
+      }
+    }
+
+    const { instances = [] } = await this.rawRequest<{
+      instances?: SdkInstanceSummary[];
+    }>("GET", "/instances");
+    const existing = instances.find(
+      (instance) => instance.name === this.instanceName,
+    );
+
+    if (existing?.id) return existing.id;
+
+    const created = await this.rawRequest<{ id?: string }>(
+      "POST",
+      "/instances",
+      {
+        name: this.instanceName,
+      },
+    );
+
+    if (!created.id) {
+      throw new CorsairError(
+        "Corsair created/listed an instance but did not return an instance id.",
+        undefined,
+        created,
+      );
+    }
+
+    return created.id;
+  }
+
+  private async createSdkClient() {
+    const sdk = await loadCorsairSdk();
+    const createClient = sdk ? resolveSdkCreateClient(sdk) : null;
+
+    if (!createClient) return null;
+
+    return createClient({ apiKey: this.apiKey });
+  }
+
+  private async rawRequest<TResponse>(
+    method: "GET" | "POST",
+    path: string,
+    body?: JsonRecord,
+  ) {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
+
+    const text = await response.text();
+    const payload = text ? tryParseJson(text) : null;
+
+    if (!response.ok) {
+      throw new CorsairError(
+        explainCorsairHttpError(
+          response.status,
+          payload,
+          this.configuredInstanceId || this.instanceName,
+        ),
+        response.status,
+        payload,
+      );
+    }
+
+    return payload as TResponse;
   }
 }
 
@@ -273,6 +402,17 @@ function parseDriver(value: string): CorsairDriver {
   return value === "sdk" || value === "rest" || value === "auto"
     ? value
     : "auto";
+}
+
+function sanitizeInstanceName(value: string) {
+  const sanitized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return sanitized || "triageos";
 }
 
 async function loadCorsairSdk(): Promise<SdkModule | null> {
