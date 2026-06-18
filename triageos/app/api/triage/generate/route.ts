@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { apiErrorResponse } from "@/lib/api/errors";
 import { requireUser } from "@/lib/auth/session";
 import { syncRecentGmailToTriage } from "@/lib/triage/gmail-ingestion";
 
@@ -20,8 +21,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to sync Gmail.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to sync Gmail.");
   }
 }

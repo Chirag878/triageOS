@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { apiErrorResponse } from "@/lib/api/errors";
 import { requireUser } from "@/lib/auth/session";
+import {
+  calendarEventWriteFromCreateResult,
+  listCalendarEvents,
+  saveCalendarEvent,
+} from "@/lib/calendar/events";
 import { createCalendarEvent } from "@/lib/corsair/calendar";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
 
@@ -32,6 +38,21 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const input = createCalendarEventSchema.parse(body);
     const connection = await getOrCreateCorsairConnection(profile.id);
+    const existingEvents = await listCalendarEvents(profile.id);
+    const existingEvent = existingEvents.find(
+      (event) =>
+        event.title === input.title &&
+        event.startTime === input.startTime &&
+        event.attendees.join(",") === input.attendees.join(","),
+    );
+
+    if (existingEvent) {
+      return NextResponse.json({
+        event: existingEvent,
+        idempotent: true,
+        message: "This calendar event already exists in TriageOS.",
+      });
+    }
 
     const event = await createCalendarEvent({
       tenantId: connection.corsairAccountId,
@@ -43,13 +64,26 @@ export async function POST(request: Request) {
       description: input.description,
       reminderMinutes: input.reminderMinutes,
     });
+    const persistedEvent = await saveCalendarEvent(
+      calendarEventWriteFromCreateResult({
+        userId: profile.id,
+        source: "manual",
+        calendarInput: {
+          tenantId: connection.corsairAccountId,
+          title: input.title,
+          startTime: input.startTime,
+          durationMinutes: input.durationMinutes,
+          timezone: input.timezone,
+          attendees: input.attendees,
+          description: input.description,
+          reminderMinutes: input.reminderMinutes,
+        },
+        result: event,
+      }),
+    );
 
-    return NextResponse.json({ event });
+    return NextResponse.json({ event: persistedEvent, remoteEvent: event });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to create calendar event.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to create calendar event.");
   }
 }

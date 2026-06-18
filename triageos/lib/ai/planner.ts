@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 
+import { isDemoModeEnabled } from "@/config/env";
 import { aiTriageOutputSchema, type AiTriageOutput } from "@/lib/ai/schemas";
+import { generateDemoAiWorkflowCard } from "@/lib/demo/data";
 
 type PlannerInput = {
   fromEmail: string;
@@ -17,6 +19,10 @@ export async function generateAiWorkflowCard(input: PlannerInput) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
+    if (isDemoModeEnabled()) {
+      return generateDemoAiWorkflowCard(input);
+    }
+
     throw new Error(
       "Missing OPENAI_API_KEY. Add it to .env.local before generating AI cards.",
     );

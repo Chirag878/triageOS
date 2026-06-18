@@ -40,6 +40,10 @@ export function getAdminEmails() {
     .filter(Boolean);
 }
 
+export function isDemoModeEnabled() {
+  return process.env.TRIAGEOS_DEMO_MODE === "true";
+}
+
 export function getCorsairEnv() {
   return {
     apiKey: process.env.CORSAIR_DEV_KEY ?? process.env.CORSAIR_API_KEY ?? "",

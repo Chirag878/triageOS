@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { apiErrorResponse } from "@/lib/api/errors";
 import { requireUser } from "@/lib/auth/session";
 import { listTriageItems } from "@/lib/triage/gmail-ingestion";
 
@@ -10,8 +11,6 @@ export async function GET() {
 
     return NextResponse.json({ items });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to load triage items.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to load triage items.");
   }
 }

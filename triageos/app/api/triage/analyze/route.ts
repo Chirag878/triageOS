@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { apiErrorResponse } from "@/lib/api/errors";
 import { db } from "@/db/client";
 import { triageItems } from "@/db/schema";
 import { generateAiWorkflowCard } from "@/lib/ai/planner";
@@ -64,10 +65,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ item: updated });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to generate AI workflow card.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to generate AI workflow card.");
   }
 }

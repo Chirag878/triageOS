@@ -50,7 +50,11 @@ export function CorsairConnectionStatus() {
   const connect = () => {
     startTransition(async () => {
       setError(null);
-      const response = await fetch("/api/corsair/connect", { method: "POST" });
+      const response = await fetch("/api/corsair/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plugin: "gmail", returnTo: "/onboarding" }),
+      });
       const payload = (await response.json()) as {
         url?: string;
         error?: string;

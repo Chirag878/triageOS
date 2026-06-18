@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   CalendarCheck2,
   CalendarDays,
@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Clock3,
   Loader2,
-  Pencil,
   PlugZap,
   Plus,
   RefreshCw,
@@ -33,29 +32,61 @@ import { Textarea } from "@/components/ui/textarea";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const SUMMARY_PROMPTS = [
-  "Protect deep-work blocks around your busiest meeting day.",
-  "Batch lighter calls together so context switching stays low.",
-  "Prep agenda notes before external attendee meetings.",
-];
-
 type CalendarEvent = {
   id: string;
   title: string;
   startTime: string | null;
   endTime: string | null;
   attendees: string[];
+  description: string | null;
+  timezone: string;
+  location: string | null;
+  status: string;
+  externalUrl: string | null;
 };
 
 type CalendarSyncResponse = {
   count?: number;
+  persistedCount?: number;
   events?: CalendarEvent[];
   operationPath?: string;
   error?: string;
 };
 
 type CalendarCreateResponse = {
-  event?: Record<string, unknown>;
+  event?: CalendarEvent;
+  error?: string;
+};
+
+type CalendarSummary = {
+  headline: string;
+  scheduleReadout: string;
+  prepFocus: string[];
+  risks: string[];
+  suggestedActions: string[];
+  nextBestAction: string;
+  approvalNote: string;
+  generatedBy: "openai" | "deterministic" | "demo";
+};
+
+type CalendarSummaryResponse = {
+  summary?: CalendarSummary;
+  error?: string;
+};
+
+type MeetingPrep = {
+  objective: string;
+  context: string;
+  attendeeNotes: string[];
+  agenda: string[];
+  openQuestions: string[];
+  suggestedActions: string[];
+  approvalNote: string;
+  generatedBy: "openai" | "deterministic";
+};
+
+type MeetingPrepResponse = {
+  prep?: MeetingPrep;
   error?: string;
 };
 
@@ -69,16 +100,35 @@ type CalendarDay = {
 
 export function CalendarDashboard({
   initialConnected,
+  connectionVerified,
+  returnTo,
+  autoConnect,
+  initialEvents,
 }: {
   initialConnected: boolean;
+  connectionVerified: boolean;
+  returnTo: string;
+  autoConnect: boolean;
+  initialEvents?: CalendarEvent[];
 }) {
+  const safeInitialEvents = normalizeCalendarEvents(initialEvents);
   const [isConnected] = useState(initialConnected);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const didAutoConnect = useRef(false);
+  const [events, setEvents] = useState<CalendarEvent[]>(safeInitialEvents);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
-  const [visibleMonthKey, setVisibleMonthKey] = useState<string | null>(null);
+  const [summary, setSummary] = useState<CalendarSummary | null>(null);
+  const [meetingPrep, setMeetingPrep] = useState<{
+    eventId: string;
+    prep: MeetingPrep;
+  } | null>(null);
+  const [preparingEventId, setPreparingEventId] = useState<string | null>(null);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(
+    firstEventDateKey(safeInitialEvents),
+  );
+  const [visibleMonthKey, setVisibleMonthKey] = useState<string | null>(
+    firstEventMonthKey(safeInitialEvents),
+  );
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventTitle, setEventTitle] = useState("");
@@ -111,19 +161,15 @@ export function CalendarDashboard({
       null,
     [calendarModel.days, selectedDateKey],
   );
-  const busyDay = useMemo(
-    () =>
-      [...calendarModel.days].sort(
-        (a, b) => b.events.length - a.events.length,
-      )[0],
-    [calendarModel.days],
-  );
-
-  const connectCorsair = () => {
+  const connectCorsair = useCallback(() => {
     startTransition(async () => {
       setError(null);
       setMessage(null);
-      const response = await fetch("/api/corsair/connect", { method: "POST" });
+      const response = await fetch("/api/corsair/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plugin: "googlecalendar", returnTo }),
+      });
       const payload = (await response.json()) as {
         url?: string;
         error?: string;
@@ -136,7 +182,13 @@ export function CalendarDashboard({
 
       window.location.href = payload.url;
     });
-  };
+  }, [returnTo, startTransition]);
+
+  useEffect(() => {
+    if (!autoConnect || isConnected || didAutoConnect.current) return;
+    didAutoConnect.current = true;
+    connectCorsair();
+  }, [autoConnect, connectCorsair, isConnected]);
 
   const syncCalendar = () => {
     startTransition(async () => {
@@ -156,12 +208,12 @@ export function CalendarDashboard({
         return;
       }
 
-      const nextEvents = payload.events ?? [];
+      const nextEvents = normalizeCalendarEvents(payload.events);
       setEvents(nextEvents);
       setSelectedDateKey(firstEventDateKey(nextEvents));
       setVisibleMonthKey(firstEventMonthKey(nextEvents));
       setMessage(
-        `Synced ${payload.count ?? 0} event${payload.count === 1 ? "" : "s"} via ${payload.operationPath ?? "Corsair"}.`,
+        `Synced ${payload.count ?? 0} event${payload.count === 1 ? "" : "s"} via ${payload.operationPath ?? "Corsair"} and saved ${payload.persistedCount ?? nextEvents.length} locally.`,
       );
     });
   };
@@ -173,20 +225,6 @@ export function CalendarDashboard({
     setEventDuration("30");
     setEventTimezone("UTC");
     setEventAttendees("");
-    setEventDescription("");
-    setEventReminder("10");
-    setIsEventDialogOpen(true);
-  };
-
-  const openEditEventDialog = (event: CalendarEvent) => {
-    setEditingEventId(event.id);
-    setEventTitle(event.title);
-    setEventStart(toDateTimeLocal(event.startTime));
-    setEventDuration(
-      String(getDurationMinutes(event.startTime, event.endTime) ?? 30),
-    );
-    setEventTimezone("UTC");
-    setEventAttendees(event.attendees.join(", "));
     setEventDescription("");
     setEventReminder("10");
     setIsEventDialogOpen(true);
@@ -216,6 +254,7 @@ export function CalendarDashboard({
                 startTime,
                 endTime,
                 attendees,
+                timezone: eventTimezone,
               }
             : event,
         ),
@@ -251,20 +290,24 @@ export function CalendarDashboard({
         return;
       }
 
-      const endTime = new Date(
-        new Date(startTime).getTime() + durationMinutes * 60_000,
-      ).toISOString();
       const createdEvent: CalendarEvent = {
-        id: readCreatedEventId(payload.event) ?? crypto.randomUUID(),
-        title: eventTitle.trim(),
-        startTime,
-        endTime,
-        attendees,
+        id: payload.event?.id ?? crypto.randomUUID(),
+        title: payload.event?.title ?? eventTitle.trim(),
+        startTime: payload.event?.startTime ?? startTime,
+        endTime: payload.event?.endTime ?? null,
+        attendees: payload.event?.attendees ?? attendees,
+        description: payload.event?.description ?? (eventDescription || null),
+        timezone: payload.event?.timezone ?? eventTimezone,
+        location: payload.event?.location ?? null,
+        status: payload.event?.status ?? "confirmed",
+        externalUrl: payload.event?.externalUrl ?? null,
       };
       setEvents((current) => [...current, createdEvent]);
       setSelectedDateKey(toDateKey(startTime));
       setVisibleMonthKey(toMonthKey(startTime));
-      setMessage("Created the event in Google Calendar through Corsair.");
+      setMessage(
+        "Created the event in Google Calendar through Corsair and saved it to TriageOS.",
+      );
       setIsEventDialogOpen(false);
     });
   };
@@ -276,26 +319,49 @@ export function CalendarDashboard({
   };
 
   const createCalendarSummary = () => {
-    if (sortedEvents.length === 0) {
-      setSummary(
-        "Sync your calendar first, then TriageOS can summarize your upcoming schedule.",
-      );
-      return;
-    }
+    startTransition(async () => {
+      setError(null);
+      setMessage(null);
 
-    const externalMeetings = sortedEvents.filter(
-      (event) => event.attendees.length > 0,
-    ).length;
-    const nextEvent = sortedEvents[0];
-    const busiestLabel = busyDay
-      ? formatDayHeading(busyDay.date)
-      : "your busiest day";
-    const recommendation =
-      SUMMARY_PROMPTS[sortedEvents.length % SUMMARY_PROMPTS.length];
+      const response = await fetch("/api/calendar/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const payload = (await response.json()) as CalendarSummaryResponse;
 
-    setSummary(
-      `You have ${sortedEvents.length} upcoming events in ${calendarModel.monthLabel}. ${externalMeetings} include attendees. Next up: “${nextEvent.title}” at ${formatTime(nextEvent.startTime)}. Busiest day: ${busiestLabel}. ${recommendation}`,
-    );
+      if (!response.ok || payload.error || !payload.summary) {
+        setError(payload.error ?? "Unable to generate AI Calendar Summary.");
+        return;
+      }
+
+      setSummary(payload.summary);
+      setMessage("Generated an AI Calendar Summary from calendar and Gmail context.");
+    });
+  };
+
+  const createMeetingPrep = (eventId: string) => {
+    startTransition(async () => {
+      setError(null);
+      setMessage(null);
+      setPreparingEventId(eventId);
+
+      const response = await fetch("/api/calendar/meeting-prep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId }),
+      });
+      const payload = (await response.json()) as MeetingPrepResponse;
+
+      setPreparingEventId(null);
+
+      if (!response.ok || payload.error || !payload.prep) {
+        setError(payload.error ?? "Unable to generate Meeting Prep AI.");
+        return;
+      }
+
+      setMeetingPrep({ eventId, prep: payload.prep });
+      setMessage("Generated Meeting Prep AI from calendar and Gmail context.");
+    });
   };
 
   return (
@@ -330,10 +396,16 @@ export function CalendarDashboard({
               {isConnected ? (
                 <Button
                   onClick={createCalendarSummary}
+                  disabled={isPending}
                   variant="outline"
                   className="rounded-full border-blue-200 bg-white/80"
                 >
-                  <Sparkles className="mr-2 size-4" /> Get summary
+                  {isPending ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 size-4" />
+                  )}
+                  AI Summary
                 </Button>
               ) : null}
               <Button
@@ -364,12 +436,60 @@ export function CalendarDashboard({
               {message}
             </div>
           ) : null}
+          {isConnected && !connectionVerified ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Connection returned from Corsair. Use Sync Calendar to verify
+              access and load events.
+            </div>
+          ) : null}
           {summary ? (
-            <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900 shadow-sm">
-              <div className="mb-2 flex items-center gap-2 font-black text-emerald-950">
-                <Sparkles className="size-4" /> Calendar summary
+            <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-950 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 font-black">
+                    <Sparkles className="size-4" /> AI Calendar Summary
+                  </div>
+                  <h3 className="mt-2 text-xl font-black tracking-tight">
+                    {summary.headline}
+                  </h3>
+                </div>
+                <Badge className="w-fit rounded-full bg-white text-emerald-800 hover:bg-white">
+                  {summary.generatedBy === "openai"
+                    ? "OpenAI"
+                    : summary.generatedBy === "demo"
+                      ? "Demo fallback"
+                      : "Fallback"}
+                </Badge>
               </div>
-              {summary}
+              <p className="mt-3 max-w-4xl text-emerald-900">
+                {summary.scheduleReadout}
+              </p>
+              <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                <SummaryColumn title="Prep focus" items={summary.prepFocus} />
+                <SummaryColumn
+                  title="Risks"
+                  items={
+                    summary.risks.length
+                      ? summary.risks
+                      : ["No obvious schedule risks detected."]
+                  }
+                />
+                <SummaryColumn
+                  title="Suggested actions"
+                  items={summary.suggestedActions}
+                />
+              </div>
+              <div className="mt-5 rounded-2xl border border-emerald-200 bg-white/70 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
+                  Next best action
+                </p>
+                <p className="mt-2 font-semibold text-emerald-950">
+                  {summary.nextBestAction}
+                </p>
+                <p className="mt-2 text-xs font-semibold text-emerald-800">
+                  {summary.approvalNote}
+                </p>
+              </div>
             </div>
           ) : null}
 
@@ -389,7 +509,7 @@ export function CalendarDashboard({
                 disabled={isPending}
                 className="mt-5 rounded-full bg-blue-700 text-white hover:bg-blue-600"
               >
-                <PlugZap className="mr-2 size-4" /> Connect Gmail + Calendar
+                <PlugZap className="mr-2 size-4" /> Connect Calendar
               </Button>
             </section>
           ) : (
@@ -524,10 +644,19 @@ export function CalendarDashboard({
                           variant="outline"
                           size="sm"
                           className="mt-3 rounded-full bg-white"
-                          onClick={() => openEditEventDialog(event)}
+                          disabled={preparingEventId === event.id}
+                          onClick={() => createMeetingPrep(event.id)}
                         >
-                          <Pencil className="mr-2 size-3.5" /> Edit
+                          {preparingEventId === event.id ? (
+                            <Loader2 className="mr-2 size-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="mr-2 size-3.5" />
+                          )}
+                          Meeting prep
                         </Button>
+                        {meetingPrep?.eventId === event.id ? (
+                          <MeetingPrepPanel prep={meetingPrep.prep} />
+                        ) : null}
                       </article>
                     ))}
                   </div>
@@ -682,15 +811,21 @@ function buildCalendarModel(
 }
 
 function firstEventMonthKey(events: CalendarEvent[]) {
-  return events.find((event) => event.startTime)?.startTime
-    ? toMonthKey(events.find((event) => event.startTime)?.startTime ?? null)
-    : null;
+  const firstEventStart = events.find((event) => event.startTime)?.startTime;
+  return firstEventStart ? toMonthKey(firstEventStart) : null;
 }
 
 function firstEventDateKey(events: CalendarEvent[]) {
-  return events.find((event) => event.startTime)?.startTime
-    ? toDateKey(events.find((event) => event.startTime)?.startTime ?? null)
-    : null;
+  const firstEventStart = events.find((event) => event.startTime)?.startTime;
+  return firstEventStart ? toDateKey(firstEventStart) : null;
+}
+
+function normalizeCalendarEvents(events: CalendarEvent[] | undefined) {
+  if (!Array.isArray(events)) return [];
+
+  return events.filter((event): event is CalendarEvent =>
+    Boolean(event && typeof event.id === "string"),
+  );
 }
 
 function shiftMonthKey(monthKey: string, direction: -1 | 1) {
@@ -714,31 +849,11 @@ function defaultDateTimeLocal(date?: Date) {
   return base.toISOString().slice(0, 16);
 }
 
-function toDateTimeLocal(value: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 16);
-}
-
 function fromDateTimeLocal(value: string) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
-}
-
-function getDurationMinutes(start: string | null, end: string | null) {
-  if (!start || !end) return null;
-  const duration = new Date(end).getTime() - new Date(start).getTime();
-  return Number.isFinite(duration) && duration > 0
-    ? Math.round(duration / 60_000)
-    : null;
-}
-
-function readCreatedEventId(event: Record<string, unknown> | undefined) {
-  const id = event?.id ?? event?.eventId;
-  return typeof id === "string" ? id : null;
 }
 
 function toMonthKey(value: string | null) {
@@ -761,6 +876,82 @@ function FormField({
         {label}
       </Label>
       <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function SummaryColumn({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-white/65 p-4">
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
+        {title}
+      </p>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="text-sm font-semibold text-emerald-950">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MeetingPrepPanel({ prep }: { prep: MeetingPrep }) {
+  return (
+    <div className="mt-4 space-y-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">
+            Meeting Prep AI
+          </p>
+          <h5 className="mt-2 font-black leading-6 text-blue-950">
+            {prep.objective}
+          </h5>
+        </div>
+        <Badge className="rounded-full bg-white text-blue-800 hover:bg-white">
+          {prep.generatedBy === "openai" ? "OpenAI" : "Fallback"}
+        </Badge>
+      </div>
+      <p className="text-sm leading-6 text-blue-900">{prep.context}</p>
+      <div className="grid gap-3">
+        <MeetingPrepList title="Attendee notes" items={prep.attendeeNotes} />
+        <MeetingPrepList title="Agenda" items={prep.agenda} />
+        <MeetingPrepList title="Open questions" items={prep.openQuestions} />
+        <MeetingPrepList title="Suggested actions" items={prep.suggestedActions} />
+      </div>
+      <p className="text-xs font-semibold leading-5 text-blue-800">
+        {prep.approvalNote}
+      </p>
+    </div>
+  );
+}
+
+function MeetingPrepList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">
+        {title}
+      </p>
+      <ul className="mt-2 space-y-1.5">
+        {items.map((item) => (
+          <li key={item} className="text-sm font-semibold text-blue-950">
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

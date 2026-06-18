@@ -4,6 +4,14 @@ type JsonRecord = Record<string, unknown>;
 type CorsairDriver = "auto" | "sdk" | "rest";
 
 type SdkTenant = {
+  plugins?: {
+    oauth?: {
+      authorizeUrl: (
+        pluginId: string,
+        returnTo?: string,
+      ) => Promise<unknown>;
+    };
+  };
   connectLink?: {
     create: (input?: JsonRecord) => Promise<unknown>;
   };
@@ -55,6 +63,11 @@ export type CorsairConnectLinkResponse = {
   expiresAt?: string;
 };
 
+export type CorsairAuthorizeLinkResponse = {
+  url: string;
+  state?: string;
+};
+
 export type CorsairRunResult<TData = unknown> =
   | { success: true; data: TData }
   | { success: false; error?: string; signInLink?: string; details?: unknown };
@@ -68,6 +81,7 @@ function readUrl(payload: unknown) {
 
   const record = payload as JsonRecord;
   const candidates = [
+    record.authorizeUrl,
     record.url,
     record.signInLink,
     record.connectUrl,
@@ -106,6 +120,56 @@ export class CorsairClient {
       : env.instanceId;
     this.instanceName = instanceName;
     this.driver = parseDriver(env.driver);
+  }
+
+  async createOAuthAuthorizeLink(input: {
+    tenantId: string;
+    pluginId: string;
+    returnTo: string;
+  }): Promise<CorsairAuthorizeLinkResponse> {
+    const sdkPayload = await this.trySdk(
+      "oauth-authorize-url",
+      async (tenant) => {
+        if (!tenant.plugins?.oauth?.authorizeUrl) {
+          throw new CorsairError(
+            "Installed Corsair SDK does not expose tenant.plugins.oauth.authorizeUrl().",
+          );
+        }
+
+        return tenant.plugins.oauth.authorizeUrl(input.pluginId, input.returnTo);
+      },
+      input.tenantId,
+    );
+
+    const payload =
+      sdkPayload ??
+      (await this.request<JsonRecord>(
+        "POST",
+        await this.tenantPluginPath(
+          input.tenantId,
+          input.pluginId,
+          "oauth/authorize-url",
+        ),
+        { returnTo: input.returnTo },
+      ));
+
+    const url = readUrl(payload);
+
+    if (!url) {
+      throw new CorsairError(
+        "Corsair did not return an OAuth authorize URL.",
+        undefined,
+        payload,
+      );
+    }
+
+    return {
+      url,
+      state:
+        typeof (payload as JsonRecord).state === "string"
+          ? ((payload as JsonRecord).state as string)
+          : undefined,
+    };
   }
 
   async createConnectLink(input: {
@@ -215,6 +279,16 @@ export class CorsairClient {
     const instanceId = await this.resolveInstanceId();
 
     return `/instances/${encodeURIComponent(instanceId)}/tenants/${encodeURIComponent(tenantId)}/${action}`;
+  }
+
+  private async tenantPluginPath(
+    tenantId: string,
+    pluginId: string,
+    action: string,
+  ) {
+    const instanceId = await this.resolveInstanceId();
+
+    return `/instances/${encodeURIComponent(instanceId)}/tenants/${encodeURIComponent(tenantId)}/plugins/${encodeURIComponent(pluginId)}/${action}`;
   }
 
   private async request<TResponse>(

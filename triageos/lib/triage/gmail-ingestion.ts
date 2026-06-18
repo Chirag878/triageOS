@@ -1,9 +1,11 @@
 import { desc, eq, sql } from "drizzle-orm";
 
+import { isDemoModeEnabled } from "@/config/env";
 import { db } from "@/db/client";
-import { triageItems } from "@/db/schema";
+import { corsairConnections, triageItems } from "@/db/schema";
 import { fetchRecentGmailMessages } from "@/lib/corsair/gmail";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
+import { getDemoGmailMessages } from "@/lib/demo/data";
 
 export async function listTriageItems(userId: string) {
   return db
@@ -22,7 +24,19 @@ export async function syncRecentGmailToTriage(input: {
   const messages = await fetchRecentGmailMessages({
     tenantId: connection.corsairAccountId,
     maxResults: input.maxResults,
+  }).catch((error) => {
+    if (!isDemoModeEnabled()) throw error;
+    return getDemoGmailMessages(input.maxResults);
   });
+
+  await db
+    .update(corsairConnections)
+    .set({
+      gmailConnected: true,
+      lastGmailSyncAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(corsairConnections.userId, input.userId));
 
   if (messages.length === 0) {
     return { imported: 0, items: await listTriageItems(input.userId) };

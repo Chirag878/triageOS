@@ -2,6 +2,10 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { actionLogs, triageItems } from "@/db/schema";
+import {
+  calendarEventWriteFromCreateResult,
+  saveCalendarEvent,
+} from "@/lib/calendar/events";
 import { createCalendarEvent } from "@/lib/corsair/calendar";
 import { createGmailDraftReply } from "@/lib/corsair/gmail-actions";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
@@ -36,6 +40,29 @@ export async function executeTriageWorkflow(input: {
     throw new Error("Triage item not found.");
   }
 
+  const existingResults: JsonRecord = {};
+  if (item.createdCalendarEventId) {
+    existingResults.persistedCalendarEvent = {
+      id: item.createdCalendarEventId,
+      idempotent: true,
+      reason: "Calendar event was already created for this workflow.",
+    };
+  }
+  if (item.draftEmailMessageId) {
+    existingResults.draft = {
+      id: item.draftEmailMessageId,
+      idempotent: true,
+      reason: "Gmail draft was already created for this workflow.",
+    };
+  }
+  if (
+    item.status === "completed" &&
+    (!input.createEvent || item.createdCalendarEventId) &&
+    (!input.draftReply || item.draftEmailMessageId)
+  ) {
+    return { item, results: existingResults, idempotent: true };
+  }
+
   const replyBody = input.suggestedReplyOverride?.trim() || item.suggestedReply;
   const calendarAction =
     input.calendarActionOverride ??
@@ -48,7 +75,7 @@ export async function executeTriageWorkflow(input: {
   }
 
   const connection = await getOrCreateCorsairConnection(input.userId);
-  const results: JsonRecord = {};
+  const results: JsonRecord = { ...existingResults };
   const updates: Partial<typeof triageItems.$inferInsert> = {
     status: "executing",
     updatedAt: new Date(),
@@ -57,7 +84,7 @@ export async function executeTriageWorkflow(input: {
   await db.update(triageItems).set(updates).where(eq(triageItems.id, item.id));
 
   try {
-    if (input.createEvent) {
+    if (input.createEvent && !item.createdCalendarEventId) {
       if (calendarAction?.type && calendarAction.type !== "none") {
         const payload = normalizeCalendarAction(calendarAction, item.fromEmail);
         await createActionLog({
@@ -71,8 +98,21 @@ export async function executeTriageWorkflow(input: {
           tenantId: connection.corsairAccountId,
           ...payload,
         });
+        const persistedEvent = await saveCalendarEvent(
+          calendarEventWriteFromCreateResult({
+            userId: input.userId,
+            source: "workflow",
+            calendarInput: {
+              tenantId: connection.corsairAccountId,
+              ...payload,
+            },
+            result: calendarResult,
+          }),
+        );
         results.calendar = calendarResult;
-        updates.createdCalendarEventId = extractId(calendarResult);
+        results.persistedCalendarEvent = persistedEvent;
+        updates.createdCalendarEventId =
+          persistedEvent.id ?? extractId(calendarResult);
         await createActionLog({
           userId: input.userId,
           triageItemId: item.id,
@@ -84,7 +124,7 @@ export async function executeTriageWorkflow(input: {
       }
     }
 
-    if (input.draftReply && replyBody) {
+    if (input.draftReply && replyBody && !item.draftEmailMessageId) {
       const to = extractEmail(item.fromEmail);
       const payload = {
         to,

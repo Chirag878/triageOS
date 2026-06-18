@@ -4,6 +4,7 @@ import {
   Bot,
   CalendarCheck,
   Command,
+  FileText,
   Home,
   Inbox,
   MailCheck,
@@ -21,6 +22,7 @@ type Profile = Awaited<ReturnType<typeof requireUser>>;
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
+  { href: "/briefing", label: "Briefing", icon: FileText },
   { href: "/gmail", label: "Gmail", icon: MailCheck },
   { href: "/calendar", label: "Calendar", icon: CalendarCheck },
   { href: "/ai", label: "AI Lab", icon: Bot },
@@ -114,7 +116,7 @@ export function AppShell({
             </div>
             <div className="hidden items-center gap-2 text-sm font-semibold text-slate-300 lg:flex">
               <CalendarCheck className="size-4 text-emerald-300" />
-              Gmail + Calendar connected through Corsair
+              Gmail + Calendar managed through Corsair
             </div>
             <div className="flex items-center gap-2">
               <Button

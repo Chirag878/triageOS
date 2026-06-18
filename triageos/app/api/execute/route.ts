@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { apiErrorResponse } from "@/lib/api/errors";
 import { requireUser } from "@/lib/auth/session";
 import { executeTriageWorkflow } from "@/lib/actions/execute-workflow";
 
@@ -39,8 +40,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to execute workflow.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to execute workflow.");
   }
 }

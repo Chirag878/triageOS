@@ -1,18 +1,27 @@
+import { isDemoModeEnabled } from "@/config/env";
 import { createCorsairClient } from "@/lib/corsair/client";
 import {
   unwrapCorsairPayload,
   readString,
   isJsonRecord,
 } from "@/lib/corsair/run";
+import { getDemoCalendarEvents } from "@/lib/demo/data";
 
 type JsonRecord = Record<string, unknown>;
 
 export type CorsairCalendarEvent = {
   id: string;
+  calendarId: string;
   title: string;
+  description: string | null;
+  location: string | null;
   startTime: string | null;
   endTime: string | null;
+  timezone: string | null;
   attendees: string[];
+  status: string;
+  htmlLink: string | null;
+  raw: JsonRecord;
 };
 
 const CALENDAR_LIST_EVENTS_PATH = "googlecalendar.api.events.getMany";
@@ -22,6 +31,13 @@ export async function fetchUpcomingCalendarEvents(input: {
   maxResults?: number;
 }) {
   const maxResults = Math.min(Math.max(input.maxResults ?? 10, 1), 25);
+  if (isDemoModeEnabled()) {
+    return {
+      events: getDemoCalendarEvents(maxResults),
+      operationPath: `${CALENDAR_LIST_EVENTS_PATH}:demo`,
+    };
+  }
+
   const corsair = createCorsairClient();
   const payload = unwrapCorsairPayload(
     await corsair.run({
@@ -73,19 +89,31 @@ function normalizeCalendarEvent(
 
   return {
     id,
+    calendarId: readString(event, "calendarId") ?? "primary",
     title:
       readString(event, "summary") ??
       readString(event, "title") ??
       "Untitled event",
+    description: readString(event, "description"),
+    location: readString(event, "location"),
     startTime: readEventTime(event.start),
     endTime: readEventTime(event.end),
+    timezone: readEventTimezone(event.start) ?? readEventTimezone(event.end),
     attendees: readAttendees(event.attendees),
+    status: readString(event, "status") ?? "confirmed",
+    htmlLink: readString(event, "htmlLink"),
+    raw: event,
   };
 }
 
 function readEventTime(value: unknown) {
   if (!isJsonRecord(value)) return null;
   return readString(value, "dateTime") ?? readString(value, "date");
+}
+
+function readEventTimezone(value: unknown) {
+  if (!isJsonRecord(value)) return null;
+  return readString(value, "timeZone");
 }
 
 function readAttendees(value: unknown) {

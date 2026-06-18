@@ -1,38 +1,90 @@
 import { NextResponse } from "next/server";
 
-import {
-  CORSAIR_CONNECT_PLUGINS,
-  CORSAIR_CONNECT_RETURN_PATH,
-} from "@/config/corsair";
-import { getPublicEnv } from "@/config/env";
+import { CORSAIR_CONNECT_RETURN_PATH, CORSAIR_PLUGIN_IDS } from "@/config/corsair";
+import { apiErrorResponse } from "@/lib/api/errors";
 import { requireUser } from "@/lib/auth/session";
 import { CorsairError, createCorsairClient } from "@/lib/corsair/client";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
 
-export async function POST() {
+const ALLOWED_RETURN_PATHS = new Set([
+  "/gmail",
+  "/calendar",
+  "/dashboard",
+  "/onboarding",
+]);
+
+export async function POST(request: Request) {
   try {
     const profile = await requireUser();
     const connection = await getOrCreateCorsairConnection(profile.id);
     const corsair = createCorsairClient();
-    const env = getPublicEnv();
+    const body = await request.json().catch(() => ({}));
+    const returnTo = sanitizeReturnTo(
+      typeof body.returnTo === "string" ? body.returnTo : null,
+    );
+    const pluginId = sanitizePluginId(
+      typeof body.plugin === "string" ? body.plugin : null,
+      returnTo,
+    );
+    const callbackUrl = new URL(CORSAIR_CONNECT_RETURN_PATH, request.url);
+    callbackUrl.searchParams.set("returnTo", returnTo);
+    callbackUrl.searchParams.set("plugin", pluginId);
 
-    const connectLink = await corsair.createConnectLink({
+    console.info("[corsair.connect] generated callback URL", {
+      userId: profile.id,
       tenantId: connection.corsairAccountId,
-      plugins: CORSAIR_CONNECT_PLUGINS,
-      returnUrl: `${env.appUrl}${CORSAIR_CONNECT_RETURN_PATH}`,
+      pluginId,
+      returnTo,
+      callbackUrl: callbackUrl.toString(),
+    });
+
+    const authorizeLink = await corsair.createOAuthAuthorizeLink({
+      tenantId: connection.corsairAccountId,
+      pluginId,
+      returnTo: callbackUrl.toString(),
+    });
+
+    console.info("[corsair.connect] generated Corsair OAuth authorize URL", {
+      userId: profile.id,
+      tenantId: connection.corsairAccountId,
+      pluginId,
+      returnTo,
+      callbackUrl: callbackUrl.toString(),
+      authorizeUrl: authorizeLink.url,
+      state: authorizeLink.state ?? null,
     });
 
     return NextResponse.json({
-      url: connectLink.url,
-      expiresAt: connectLink.expiresAt ?? null,
+      url: authorizeLink.url,
+      state: authorizeLink.state ?? null,
     });
   } catch (error) {
     const status = error instanceof CorsairError ? 502 : 500;
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to create Corsair connect link.";
+    return apiErrorResponse(
+      error,
+      "Failed to create Corsair OAuth authorize URL.",
+      status,
+    );
+  }
+}
 
-    return NextResponse.json({ error: message }, { status });
+function sanitizePluginId(value: string | null, returnTo: string) {
+  if (value === CORSAIR_PLUGIN_IDS.gmail) return CORSAIR_PLUGIN_IDS.gmail;
+  if (value === CORSAIR_PLUGIN_IDS.calendar) return CORSAIR_PLUGIN_IDS.calendar;
+
+  if (returnTo === "/calendar") return CORSAIR_PLUGIN_IDS.calendar;
+  return CORSAIR_PLUGIN_IDS.gmail;
+}
+
+function sanitizeReturnTo(value: string | null) {
+  if (!value) return "/onboarding";
+
+  try {
+    const parsed = new URL(value, "https://triageos.local");
+    const path = parsed.pathname;
+
+    return ALLOWED_RETURN_PATHS.has(path) ? path : "/onboarding";
+  } catch {
+    return "/onboarding";
   }
 }

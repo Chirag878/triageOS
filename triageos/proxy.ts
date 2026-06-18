@@ -5,6 +5,7 @@ import { getPublicEnv } from "@/config/env";
 
 const protectedPrefixes = [
   "/dashboard",
+  "/briefing",
   "/onboarding",
   "/reset-password",
   "/workflows",
