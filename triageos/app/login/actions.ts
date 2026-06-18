@@ -87,7 +87,7 @@ export async function signInWithPassword(
   }
 
   await ensureProfile();
-  redirect("/dashboard");
+  redirect("/briefing");
 }
 
 export async function signUpWithPassword(
@@ -113,7 +113,7 @@ export async function signUpWithPassword(
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: `${env.appUrl}/auth/callback?next=/dashboard`,
+      emailRedirectTo: `${env.appUrl}/auth/callback?next=/briefing`,
       data: { full_name: parsed.data.fullName || null },
     },
   });
@@ -124,7 +124,7 @@ export async function signUpWithPassword(
 
   if (data.session) {
     await ensureProfile();
-    redirect("/dashboard");
+    redirect("/briefing");
   }
 
   return {
@@ -153,7 +153,7 @@ export async function sendMagicLink(
   const env = getPublicEnv();
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.data.email,
-    options: { emailRedirectTo: `${env.appUrl}/auth/callback?next=/dashboard` },
+    options: { emailRedirectTo: `${env.appUrl}/auth/callback?next=/briefing` },
   });
 
   if (error) {
@@ -222,7 +222,7 @@ export async function updatePassword(
   }
 
   await ensureProfile();
-  redirect("/dashboard");
+  redirect("/briefing");
 }
 
 export async function continueAsGuest(): Promise<AuthState> {
@@ -246,7 +246,7 @@ export async function continueAsGuest(): Promise<AuthState> {
   }
 
   await ensureProfile();
-  redirect("/dashboard");
+  redirect("/briefing");
 }
 
 export async function signOut() {

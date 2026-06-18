@@ -244,7 +244,7 @@ export default async function BriefingPage() {
                   asChild
                   className="mt-4 rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
                 >
-                  <Link href={nextAction ? "/gmail" : "/dashboard"}>
+                  <Link href={nextAction ? "/gmail" : "/briefing"}>
                     {nextAction ? "Review in Gmail" : "Start setup"}
                     <ArrowRight className="ml-2 size-4" />
                   </Link>

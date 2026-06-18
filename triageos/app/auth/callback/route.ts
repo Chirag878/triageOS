@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const error =
     requestUrl.searchParams.get("error_description") ??
     requestUrl.searchParams.get("error");
-  const next = requestUrl.searchParams.get("next") ?? "/dashboard";
+  const next = requestUrl.searchParams.get("next") ?? "/briefing";
 
   if (error) {
     return NextResponse.redirect(

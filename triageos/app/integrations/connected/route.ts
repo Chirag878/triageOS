@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
 
 const ALLOWED_NEXT_PATHS = new Set([
+  "/briefing",
   "/dashboard",
   "/gmail",
   "/calendar",
@@ -28,10 +29,12 @@ export async function GET(request: NextRequest) {
     .where(eq(corsairConnections.userId, profile.id));
 
   const requestedNext =
-    request.nextUrl.searchParams.get("next") ?? "/dashboard";
+    request.nextUrl.searchParams.get("next") ?? "/briefing";
   const nextPath = ALLOWED_NEXT_PATHS.has(requestedNext)
-    ? requestedNext
-    : "/dashboard";
+    ? requestedNext === "/dashboard"
+      ? "/briefing"
+      : requestedNext
+    : "/briefing";
   const redirectUrl = new URL(nextPath, request.nextUrl.origin);
   redirectUrl.searchParams.set("connected", "1");
 

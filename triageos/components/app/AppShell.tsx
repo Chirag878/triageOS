@@ -1,11 +1,8 @@
 import Link from "next/link";
 import {
   Activity,
-  Bot,
   CalendarCheck,
-  Command,
   FileText,
-  Home,
   Inbox,
   MailCheck,
   Settings,
@@ -15,26 +12,23 @@ import {
 import { UserButton } from "@/components/app/UserButton";
 import { CommandPalette } from "@/components/command/CommandPalette";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import type { requireUser } from "@/lib/auth/session";
 
 type Profile = Awaited<ReturnType<typeof requireUser>>;
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/briefing", label: "Briefing", icon: FileText },
-  { href: "/gmail", label: "Gmail", icon: MailCheck },
-  { href: "/calendar", label: "Calendar", icon: CalendarCheck },
-  { href: "/ai", label: "AI Lab", icon: Bot },
-  { href: "/workflows", label: "Workflows", icon: Inbox },
-  { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/gmail", label: "Inbox", icon: MailCheck },
+  { href: "/calendar", label: "Schedule", icon: CalendarCheck },
+  { href: "/workflows", label: "Work Queue", icon: Inbox },
+  { href: "/activity", label: "History", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppShell({
   profile,
   children,
-  active = "/dashboard",
+  active = "/briefing",
 }: {
   profile: Profile;
   children: React.ReactNode;
@@ -51,7 +45,7 @@ export function AppShell({
 
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
         <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-white/10 bg-white/5 p-5 shadow-sm backdrop-blur-2xl lg:block">
-          <Link href="/dashboard" className="flex items-center gap-3">
+          <Link href="/briefing" className="flex items-center gap-3">
             <span className="grid size-11 place-items-center rounded-2xl bg-emerald-400 text-xl text-slate-950 shadow-lg shadow-slate-900/15">
               🐼
             </span>
@@ -70,7 +64,7 @@ export function AppShell({
               <Sparkles className="mr-1 size-3" /> AI command center
             </Badge>
             <p className="mt-3 text-sm leading-6 text-emerald-100">
-              Sync Gmail, generate a workflow card, approve one action bundle.
+              AI Chief of Staff for Gmail and Calendar decisions.
             </p>
           </div>
 
@@ -100,8 +94,7 @@ export function AppShell({
               Next action
             </p>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Use the dashboard guide: sync Gmail, open a card, generate AI,
-              then approve the bundle.
+              Start with Briefing, then review Inbox, Schedule, and Work Queue.
             </p>
           </div>
         </aside>
@@ -116,19 +109,9 @@ export function AppShell({
             </div>
             <div className="hidden items-center gap-2 text-sm font-semibold text-slate-300 lg:flex">
               <CalendarCheck className="size-4 text-emerald-300" />
-              Gmail + Calendar managed through Corsair
+              AI Chief of Staff for Gmail + Calendar
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="hidden rounded-full border-white/10 bg-white/10 text-white md:inline-flex"
-              >
-                <Link href="/dashboard#command-palette-preview">
-                  <Command className="mr-2 size-4" /> Cmd K soon
-                </Link>
-              </Button>
               <UserButton profile={profile} />
             </div>
           </header>

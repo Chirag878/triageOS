@@ -168,11 +168,7 @@ export function CalendarDashboard({
       const response = await fetch("/api/corsair/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-<<<<<<< HEAD
         body: JSON.stringify({ plugin: "googlecalendar", returnTo }),
-=======
-        body: JSON.stringify({ returnTo: "/calendar" }),
->>>>>>> 73fa312b9a3e2a8003b1424132c989d573f42073
       });
       const payload = (await response.json()) as {
         url?: string;

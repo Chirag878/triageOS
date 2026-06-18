@@ -10,6 +10,7 @@ import {
 } from "@/lib/corsair/tenant";
 
 const ALLOWED_RETURN_PATHS = new Set([
+  "/briefing",
   "/gmail",
   "/calendar",
   "/dashboard",
@@ -133,7 +134,8 @@ function sanitizeReturnTo(value: string | null) {
     const parsed = new URL(value, "https://triageos.local");
     const path = parsed.pathname;
 
-    return ALLOWED_RETURN_PATHS.has(path) ? path : "/onboarding";
+    if (!ALLOWED_RETURN_PATHS.has(path)) return "/onboarding";
+    return path === "/dashboard" ? "/briefing" : path;
   } catch {
     return "/onboarding";
   }

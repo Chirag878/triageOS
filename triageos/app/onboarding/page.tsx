@@ -13,7 +13,7 @@ export default async function OnboardingPage() {
     <main className="min-h-screen bg-[#f7f4ea] px-6 py-6 text-slate-950 sm:px-10 lg:px-16">
       <nav className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-white/70 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-xl">
         <Link
-          href="/dashboard"
+          href="/briefing"
           className="flex items-center gap-2 font-black tracking-tight"
         >
           <span className="grid size-9 place-items-center rounded-full bg-slate-950 text-lg text-white">

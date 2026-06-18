@@ -2,12 +2,9 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-<<<<<<< HEAD
-import { apiErrorResponse } from "@/lib/api/errors";
-=======
 import { db } from "@/db/client";
 import { corsairConnections } from "@/db/schema";
->>>>>>> 73fa312b9a3e2a8003b1424132c989d573f42073
+import { apiErrorResponse } from "@/lib/api/errors";
 import { requireUser } from "@/lib/auth/session";
 import { syncRecentGmailToTriage } from "@/lib/triage/gmail-ingestion";
 

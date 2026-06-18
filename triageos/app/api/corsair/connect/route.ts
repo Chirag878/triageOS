@@ -8,6 +8,7 @@ import { CorsairError, createCorsairClient } from "@/lib/corsair/client";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
 
 const ALLOWED_RETURN_PATHS = new Set([
+  "/briefing",
   "/gmail",
   "/calendar",
   "/dashboard",
@@ -27,13 +28,8 @@ export async function POST(request: Request) {
     const connection = await getOrCreateCorsairConnection(profile.id);
     const corsair = createCorsairClient();
   
-    const returnTo = sanitizeReturnTo(
-      typeof body.returnTo === "string" ? body.returnTo : null,
-    );
-    const pluginId = sanitizePluginId(
-      typeof body.plugin === "string" ? body.plugin : null,
-      returnTo,
-    );
+    const returnTo = sanitizeReturnTo(input.returnTo ?? null);
+    const pluginId = sanitizePluginId(input.plugin ?? null, returnTo);
     const callbackUrl = new URL(CORSAIR_CONNECT_RETURN_PATH, request.url);
     callbackUrl.searchParams.set("returnTo", returnTo);
     callbackUrl.searchParams.set("plugin", pluginId);
@@ -91,7 +87,8 @@ function sanitizeReturnTo(value: string | null) {
     const parsed = new URL(value, "https://triageos.local");
     const path = parsed.pathname;
 
-    return ALLOWED_RETURN_PATHS.has(path) ? path : "/onboarding";
+    if (!ALLOWED_RETURN_PATHS.has(path)) return "/onboarding";
+    return path === "/dashboard" ? "/briefing" : path;
   } catch {
     return "/onboarding";
   }

@@ -97,7 +97,7 @@ export async function requireAdmin() {
   const profile = await requireUser();
 
   if (profile.role !== "admin") {
-    redirect("/dashboard");
+    redirect("/briefing");
   }
 
   return profile;
