@@ -15,80 +15,37 @@ export type CorsairCalendarEvent = {
   attendees: string[];
 };
 
-const CALENDAR_LIST_EVENT_OPERATIONS = [
-  "googlecalendar.api.events.list",
-  "googlecalendar.events.list",
-  "googlecalendar.api.calendar.events.list",
-  "googlecalendar.api.calendars.events.list",
-] as const;
+const CALENDAR_LIST_EVENTS_PATH = "googlecalendar.api.events.getMany";
 
 export async function fetchUpcomingCalendarEvents(input: {
   tenantId: string;
   maxResults?: number;
 }) {
   const maxResults = Math.min(Math.max(input.maxResults ?? 10, 1), 25);
-  const errors: string[] = [];
-
-  for (const path of CALENDAR_LIST_EVENT_OPERATIONS) {
-    try {
-      const events = await fetchUpcomingCalendarEventsWithPath({
-        tenantId: input.tenantId,
-        maxResults,
-        path,
-      });
-
-      return { events, operationPath: path };
-    } catch (error) {
-      errors.push(
-        `${path}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  throw new Error(
-    [
-      "Unable to sync Google Calendar through Corsair.",
-      "Tried supported Calendar list operation paths but all failed.",
-      "Make sure Google Calendar is connected in Corsair and the Calendar plugin exposes an events.list operation.",
-      `Details: ${errors.join(" | ")}`,
-    ].join(" "),
-  );
-}
-
-async function fetchUpcomingCalendarEventsWithPath(input: {
-  tenantId: string;
-  maxResults: number;
-  path: string;
-}) {
   const corsair = createCorsairClient();
   const payload = unwrapCorsairPayload(
     await corsair.run({
       tenantId: input.tenantId,
-      path: input.path,
-      payload: buildListEventsPayload(input.maxResults),
+      path: CALENDAR_LIST_EVENTS_PATH,
+      payload: buildListEventsPayload(maxResults),
     }),
   );
 
-  return extractEventArray(payload)
+  const events = extractEventArray(payload)
     .map(normalizeCalendarEvent)
     .filter((event): event is CorsairCalendarEvent => Boolean(event))
-    .slice(0, input.maxResults);
+    .slice(0, maxResults);
+
+  return { events, operationPath: CALENDAR_LIST_EVENTS_PATH };
 }
 
 function buildListEventsPayload(maxResults: number) {
-  const timeMin = new Date().toISOString();
-
   return {
     calendarId: "primary",
-    calendar_id: "primary",
     maxResults,
-    max_results: maxResults,
     singleEvents: true,
-    single_events: true,
     orderBy: "startTime",
-    order_by: "startTime",
-    timeMin,
-    time_min: timeMin,
+    timeMin: new Date().toISOString(),
   };
 }
 

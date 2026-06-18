@@ -1,3 +1,5 @@
+import { addMinutes } from "date-fns";
+
 import { createCorsairClient } from "@/lib/corsair/client";
 import { unwrapCorsairPayload } from "@/lib/corsair/run";
 
@@ -11,12 +13,12 @@ export type CalendarEventInput = {
   description?: string | null;
 };
 
-const CALENDAR_CREATE_EVENT_PATH = "googlecalendar.api.events.insert";
+const CALENDAR_CREATE_EVENT_PATH = "googlecalendar.api.events.create";
 
 export async function createCalendarEvent(input: CalendarEventInput) {
-  const start = new Date(input.startTime);
-  const end = new Date(start.getTime() + input.durationMinutes * 60_000);
   const corsair = createCorsairClient();
+  const start = new Date(input.startTime);
+  const end = addMinutes(start, input.durationMinutes);
 
   return unwrapCorsairPayload(
     await corsair.run({
@@ -24,7 +26,8 @@ export async function createCalendarEvent(input: CalendarEventInput) {
       path: CALENDAR_CREATE_EVENT_PATH,
       payload: {
         calendarId: "primary",
-        requestBody: {
+        sendUpdates: "all",
+        event: {
           summary: input.title,
           description: input.description ?? undefined,
           start: {
