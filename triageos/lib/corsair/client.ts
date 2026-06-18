@@ -47,6 +47,10 @@ type SdkModule = {
     | (new (options: { apiKey: string }) => ReturnType<SdkCreateClient>);
 };
 
+type LoadedCorsairSdk =
+  | { module: SdkModule; importError?: never }
+  | { module: null; importError: unknown };
+
 export class CorsairError extends Error {
   constructor(
     message: string,
@@ -336,13 +340,14 @@ export class CorsairClient {
     if (this.driver === "rest") return null;
 
     const sdk = await loadCorsairSdk();
-
-    const createClient = sdk ? resolveSdkCreateClient(sdk) : null;
+    const createClient = sdk.module
+      ? resolveSdkCreateClient(sdk.module)
+      : null;
 
     if (!createClient) {
       if (this.driver === "sdk") {
         throw new CorsairError(
-          `CORSAIR_DRIVER=sdk but @corsair-dev/app could not be loaded or did not expose a supported client factory for Corsair ${operation}. Export keys: ${sdk ? Object.keys(sdk).join(", ") || "none" : "package not found"}.`,
+          explainMissingSdkFactory(sdk, operation),
         );
       }
 
@@ -434,7 +439,9 @@ export class CorsairClient {
 
   private async createSdkClient() {
     const sdk = await loadCorsairSdk();
-    const createClient = sdk ? resolveSdkCreateClient(sdk) : null;
+    const createClient = sdk.module
+      ? resolveSdkCreateClient(sdk.module)
+      : null;
 
     if (!createClient) return null;
 
@@ -512,20 +519,18 @@ function looksLikeOpaqueInstanceId(value: string) {
   );
 }
 
-async function loadCorsairSdk(): Promise<SdkModule | null> {
+async function loadCorsairSdk(): Promise<LoadedCorsairSdk> {
   try {
-    const dynamicImport = new Function(
-      "specifier",
-      "return import(specifier)",
-    ) as (specifier: string) => Promise<SdkModule>;
+    const sdk = await import("@corsair-dev/app");
 
-    return await dynamicImport("@corsair-dev/app");
-  } catch {
-    return null;
+    return { module: sdk as unknown as SdkModule };
+  } catch (error) {
+    return { module: null, importError: error };
   }
 }
 
 function resolveSdkCreateClient(sdk: SdkModule): SdkCreateClient | null {
+  // @corsair-dev/app@0.1.5 exposes this as the primary hosted API client.
   if (typeof sdk.createClient === "function") return sdk.createClient;
 
   if (
@@ -555,6 +560,19 @@ function resolveSdkCreateClient(sdk: SdkModule): SdkCreateClient | null {
   }
 
   return null;
+}
+
+function explainMissingSdkFactory(
+  sdk: LoadedCorsairSdk,
+  operation: string,
+) {
+  if (!sdk.module) {
+    return `CORSAIR_DRIVER=sdk but @corsair-dev/app is not installed or failed to load for Corsair ${operation}. Install the SDK or set CORSAIR_DRIVER=rest.`;
+  }
+
+  const exportKeys = Object.keys(sdk.module).join(", ") || "none";
+
+  return `CORSAIR_DRIVER=sdk but @corsair-dev/app did not expose a supported client factory for Corsair ${operation}. Supported factories: createClient, default.createClient, default, Corsair. Export keys: ${exportKeys}.`;
 }
 
 function isSdkShapeError(error: unknown) {
