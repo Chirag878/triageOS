@@ -39,33 +39,35 @@ export function AppShell({
   active?: string;
 }) {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#f7f4ea] text-slate-950">
+    <main className="min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <CommandPalette />
       <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute left-[-12rem] top-[-8rem] size-[32rem] rounded-full bg-emerald-200/40 blur-3xl" />
-        <div className="absolute right-[-10rem] top-32 size-[28rem] rounded-full bg-sky-200/40 blur-3xl" />
-        <div className="absolute bottom-[-14rem] left-1/3 size-[30rem] rounded-full bg-amber-200/30 blur-3xl" />
+        <div className="absolute left-[-12rem] top-[-8rem] size-[32rem] rounded-full bg-emerald-400/20 blur-3xl" />
+        <div className="absolute right-[-10rem] top-32 size-[28rem] rounded-full bg-sky-500/20 blur-3xl" />
+        <div className="absolute bottom-[-14rem] left-1/3 size-[30rem] rounded-full bg-fuchsia-500/15 blur-3xl" />
       </div>
 
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-white/70 bg-white/55 p-5 shadow-sm backdrop-blur-2xl lg:block">
+        <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-white/10 bg-white/5 p-5 shadow-sm backdrop-blur-2xl lg:block">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <span className="grid size-11 place-items-center rounded-2xl bg-slate-950 text-xl text-white shadow-lg shadow-slate-900/15">
+            <span className="grid size-11 place-items-center rounded-2xl bg-emerald-400 text-xl text-slate-950 shadow-lg shadow-slate-900/15">
               🐼
             </span>
             <div>
-              <p className="text-lg font-black tracking-tight">TriageOS</p>
+              <p className="text-lg font-black tracking-tight text-white">
+                TriageOS
+              </p>
               <p className="text-xs font-semibold text-slate-500">
                 Decisions, not inboxes
               </p>
             </div>
           </Link>
 
-          <div className="mt-8 rounded-[1.75rem] border border-emerald-100 bg-emerald-50/80 p-4">
-            <Badge className="rounded-full bg-white text-emerald-800 hover:bg-white">
+          <div className="mt-8 rounded-[1.75rem] border border-emerald-300/20 bg-emerald-400/10 p-4">
+            <Badge className="rounded-full bg-emerald-300 text-emerald-950 hover:bg-emerald-300">
               <Sparkles className="mr-1 size-3" /> AI command center
             </Badge>
-            <p className="mt-3 text-sm leading-6 text-emerald-950">
+            <p className="mt-3 text-sm leading-6 text-emerald-100">
               Sync Gmail, generate a workflow card, approve one action bundle.
             </p>
           </div>
@@ -80,8 +82,8 @@ export function AppShell({
                   href={item.href}
                   className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${
                     isActive
-                      ? "bg-slate-950 text-white shadow-lg shadow-slate-900/10"
-                      : "text-slate-600 hover:bg-white hover:text-slate-950"
+                      ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-900/20"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <Icon className="size-4" />
@@ -91,11 +93,11 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="mt-8 rounded-[1.75rem] border border-white/80 bg-white/70 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+          <div className="mt-8 rounded-[1.75rem] border border-white/10 bg-white/5 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
               Next action
             </p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+            <p className="mt-2 text-sm leading-6 text-slate-300">
               Use the dashboard guide: sync Gmail, open a card, generate AI,
               then approve the bundle.
             </p>
@@ -103,15 +105,15 @@ export function AppShell({
         </aside>
 
         <section className="px-5 py-5 sm:px-8 lg:px-10">
-          <header className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-white/70 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-xl">
+          <header className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-white/10 bg-white/10 px-4 py-3 shadow-sm backdrop-blur-xl">
             <div className="flex items-center gap-2 font-black tracking-tight lg:hidden">
               <span className="grid size-9 place-items-center rounded-full bg-slate-950 text-lg text-white">
                 🐼
               </span>
               <span>TriageOS</span>
             </div>
-            <div className="hidden items-center gap-2 text-sm font-semibold text-slate-500 lg:flex">
-              <CalendarCheck className="size-4 text-emerald-700" />
+            <div className="hidden items-center gap-2 text-sm font-semibold text-slate-300 lg:flex">
+              <CalendarCheck className="size-4 text-emerald-300" />
               Gmail + Calendar connected through Corsair
             </div>
             <div className="flex items-center gap-2">
@@ -119,7 +121,7 @@ export function AppShell({
                 asChild
                 variant="outline"
                 size="sm"
-                className="hidden rounded-full bg-white/70 md:inline-flex"
+                className="hidden rounded-full border-white/10 bg-white/10 text-white md:inline-flex"
               >
                 <Link href="/dashboard#command-palette-preview">
                   <Command className="mr-2 size-4" /> Cmd K soon
@@ -139,8 +141,8 @@ export function AppShell({
                   href={item.href}
                   className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition ${
                     isActive
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-white/80 bg-white/70 text-slate-600"
+                      ? "border-emerald-300 bg-emerald-400 text-slate-950"
+                      : "border-white/10 bg-white/10 text-slate-200"
                   }`}
                 >
                   <Icon className="size-4" />
