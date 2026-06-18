@@ -4,9 +4,9 @@ import { AuthForm } from "@/components/auth/AuthForm";
 
 export function AuthShell({ mode = "signin" }: { mode?: "signin" | "signup" }) {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#f7f4ea] px-6 py-6 text-slate-950 sm:px-10 lg:px-16">
-      <div className="nature-orb left-[-8rem] top-[-8rem] bg-emerald-300/40" />
-      <div className="nature-orb bottom-[8rem] right-[-9rem] bg-amber-300/50" />
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f4ea] px-4 py-5 text-slate-950 sm:px-10 lg:px-16">
+      <div className="nature-orb left-[-8rem] top-[-8rem] hidden bg-emerald-300/40 sm:block" />
+      <div className="nature-orb bottom-[8rem] right-[-9rem] hidden bg-amber-300/50 sm:block" />
 
       <nav className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-white/70 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-xl">
         <Link
@@ -26,12 +26,12 @@ export function AuthShell({ mode = "signin" }: { mode?: "signin" | "signup" }) {
         </Link>
       </nav>
 
-      <section className="mx-auto grid max-w-7xl items-center gap-10 py-16 lg:grid-cols-[0.95fr_1.05fr] lg:py-24">
-        <div>
+      <section className="mx-auto grid w-full max-w-7xl items-center gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:py-24">
+        <div className="min-w-0">
           <p className="font-bold uppercase tracking-[0.25em] text-emerald-700">
             Secure app identity
           </p>
-          <h1 className="mt-5 text-5xl font-black leading-none tracking-[-0.06em] md:text-7xl">
+          <h1 className="mt-5 text-4xl font-black leading-none tracking-tight md:text-7xl">
             Sign in before connecting Gmail.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">
@@ -48,7 +48,9 @@ export function AuthShell({ mode = "signin" }: { mode?: "signin" | "signup" }) {
             </ol>
           </div>
         </div>
-        <AuthForm defaultTab={mode} />
+        <div className="min-w-0">
+          <AuthForm defaultTab={mode} />
+        </div>
       </section>
     </main>
   );

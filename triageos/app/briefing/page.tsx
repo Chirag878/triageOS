@@ -4,15 +4,15 @@ import {
   ArrowRight,
   CalendarCheck,
   CheckCircle2,
+  Clock3,
   Inbox,
-  MailCheck,
   Sparkles,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { isDemoModeEnabled } from "@/config/env";
 import { db } from "@/db/client";
 import { corsairConnections } from "@/db/schema";
@@ -56,9 +56,17 @@ export default async function BriefingPage() {
   const meetingAsks = items.filter(
     (item) => item.workflowType === "meeting_request",
   );
-  const connectedCount = Number(connection?.gmailConnected ?? false) +
+  const needsAi = items.filter((item) => !item.suggestedReply);
+  const connectedCount =
+    Number(connection?.gmailConnected ?? false) +
     Number(connection?.calendarConnected ?? false);
-  const nextAction = aiReady[0] ?? urgent[0] ?? meetingAsks[0] ?? items[0];
+  const priorities = buildPriorities({ urgent, aiReady, meetingAsks, needsAi });
+  const recommendations = buildRecommendations({
+    aiReady,
+    meetingAsks,
+    needsAi,
+    eventCount: events.length,
+  });
   const smartDayPlan = buildSmartDayPlan({
     events,
     urgentCount: urgent.length,
@@ -74,225 +82,269 @@ export default async function BriefingPage() {
 
   return (
     <AppShell profile={profile} active="/briefing">
-      <section className="space-y-6">
-        <div className="rounded-[2.25rem] border border-white/10 bg-white p-7 text-slate-950 shadow-sm">
+      <section className="mx-auto w-full max-w-6xl space-y-6 overflow-x-hidden">
+        <header className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white px-5 py-6 text-slate-950 shadow-sm shadow-slate-900/[0.03] md:px-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <Badge className="rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-                <Sparkles className="mr-1.5 size-3.5" /> Daily Briefing
+            <div className="min-w-0">
+              <Badge className="rounded-lg bg-slate-950 text-white hover:bg-slate-950">
+                <Sparkles className="mr-1.5 size-3.5" /> Briefing
               </Badge>
-              <h1 className="mt-5 max-w-4xl text-5xl font-black leading-none tracking-tight">
-                Your day, distilled into decisions.
+              <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.02] tracking-tight md:text-6xl">
+                Your operating room for today.
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-                TriageOS combines inbox intent, calendar context, and safe AI
-                actions so the next move is obvious.
+                TriageOS watches Gmail and Calendar, then surfaces the decisions
+                that need your approval.
               </p>
             </div>
-            {demoMode ? (
-              <Badge className="w-fit rounded-full bg-amber-100 text-amber-800 hover:bg-amber-100">
-                Demo workspace
-              </Badge>
-            ) : null}
-          </div>
-        </div>
-
-        <section className="grid gap-4 md:grid-cols-4">
-          <BriefingMetric label="Integrations" value={`${connectedCount}/2`} />
-          <BriefingMetric label="Inbox decisions" value={items.length} />
-          <BriefingMetric label="AI ready" value={aiReady.length} />
-          <BriefingMetric label="Upcoming events" value={events.length} />
-        </section>
-
-        <section className="grid gap-5 lg:grid-cols-[1fr_340px]">
-          <Card className="rounded-[2rem] border-emerald-200 bg-emerald-50 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-black text-emerald-950">
-                <Sparkles className="size-5 text-emerald-700" /> Smart Day Plan
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {smartDayPlan.map((step, index) => (
-                <div
-                  key={step}
-                  className="rounded-2xl border border-emerald-200 bg-white/75 p-4"
-                >
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
-                    Block {index + 1}
+            <div className="w-full rounded-2xl border border-slate-200 bg-[#f6f7f9] p-4 lg:w-72">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                    Focus Score
                   </p>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-emerald-950">
-                    {step}
+                  <p className="mt-2 text-4xl font-black tracking-tight">
+                    {focusScore.score}
+                    <span className="text-base text-slate-400">/100</span>
                   </p>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[2rem] border-blue-200 bg-blue-50 shadow-sm">
-            <CardContent className="p-6">
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-700">
-                Focus Score
-              </p>
-              <div className="mt-4 flex items-end gap-2">
-                <span className="text-6xl font-black tracking-tight text-blue-950">
-                  {focusScore.score}
-                </span>
-                <span className="pb-2 text-sm font-black text-blue-800">
-                  /100
-                </span>
+                {demoMode ? (
+                  <Badge className="rounded-full bg-amber-100 text-amber-800 hover:bg-amber-100">
+                    Demo
+                  </Badge>
+                ) : null}
               </div>
-              <p className="mt-4 text-sm leading-6 text-blue-900">
+              <p className="mt-3 text-sm leading-6 text-slate-600">
                 {focusScore.reason}
               </p>
-              <Button
-                asChild
-                className="mt-5 rounded-full bg-blue-700 text-white hover:bg-blue-600"
-              >
-                <Link href="/calendar">
-                  Improve plan <ArrowRight className="ml-2 size-4" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+        </header>
+
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <DecisionSection
+            eyebrow="What needs attention"
+            title="Today's Priorities"
+            icon={Inbox}
+            ctaHref="/gmail"
+            ctaLabel="Open Inbox"
+          >
+            <div className="space-y-3">
+              {priorities.map((priority) => (
+                <PriorityItem key={priority.title} {...priority} />
+              ))}
+            </div>
+          </DecisionSection>
+
+          <DecisionSection
+            eyebrow="What AI recommends"
+            title="AI Recommendations"
+            icon={Sparkles}
+            ctaHref="/workflows"
+            ctaLabel="Open Work Queue"
+          >
+            <div className="space-y-3">
+              {recommendations.map((recommendation) => (
+                <RecommendationItem
+                  key={recommendation.title}
+                  {...recommendation}
+                />
+              ))}
+            </div>
+          </DecisionSection>
         </section>
 
-        <section className="grid gap-5 lg:grid-cols-[1fr_380px]">
-          <Card className="rounded-[2rem] border-white/70 bg-white/85 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-black">
-                <Inbox className="size-5 text-emerald-700" /> Inbox decisions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {items.slice(0, 4).map((item) => (
-                <Link
-                  key={item.id}
-                  href="/gmail"
-                  className="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="rounded-full capitalize">
-                      {item.priorityLabel}
-                    </Badge>
-                    {item.suggestedReply ? (
-                      <Badge className="rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-                        AI ready
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <h2 className="mt-2 font-black tracking-tight">
-                    {item.subject}
-                  </h2>
-                  <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">
-                    {item.summary ?? item.snippet}
-                  </p>
-                </Link>
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <DecisionSection
+            eyebrow="What happens next"
+            title="Today's Schedule"
+            icon={CalendarCheck}
+            ctaHref="/calendar"
+            ctaLabel="Open Schedule"
+          >
+            <div className="space-y-3">
+              {events.slice(0, 4).map((event) => (
+                <ScheduleItem
+                  key={event.id}
+                  title={event.title}
+                  time={formatTime(event.startTime)}
+                  attendees={event.attendees.length}
+                />
               ))}
-              {items.length === 0 ? (
-                <EmptyBriefing
-                  title="No inbox decisions yet"
-                  text="Sync Gmail or enable Demo Mode to populate the briefing."
-                  href="/gmail"
-                  action="Open Gmail"
+              {events.length === 0 ? (
+                <EmptyState
+                  title="No schedule context yet"
+                  text="Sync Calendar so TriageOS can prep meetings and protect focus time."
+                  href="/calendar"
+                  action="Sync Schedule"
                 />
               ) : null}
-            </CardContent>
-          </Card>
+            </div>
+          </DecisionSection>
 
-          <div className="space-y-5">
-            <Card className="rounded-[2rem] border-white/70 bg-white/85 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-2xl font-black">
-                  <CalendarCheck className="size-5 text-blue-700" /> Today
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {events.slice(0, 3).map((event) => (
-                  <div
-                    key={event.id}
-                    className="rounded-2xl border border-blue-100 bg-blue-50 p-4"
-                  >
-                    <h3 className="font-black tracking-tight">{event.title}</h3>
-                    <p className="mt-1 text-sm text-blue-900">
-                      {formatTime(event.startTime)} -{" "}
-                      {event.attendees.length} attendees
+          <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03]">
+            <CardContent className="p-5">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                Smart Day Plan
+              </p>
+              <div className="mt-4 space-y-3">
+                {smartDayPlan.slice(0, 3).map((step, index) => (
+                  <div key={step} className="flex gap-3">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-950 text-xs font-black text-white">
+                      {index + 1}
+                    </span>
+                    <p className="text-sm font-semibold leading-6 text-slate-700">
+                      {step}
                     </p>
                   </div>
                 ))}
-                {events.length === 0 ? (
-                  <EmptyBriefing
-                    title="No calendar context"
-                    text="Sync Calendar to bring meetings into the briefing."
-                    href="/calendar"
-                    action="Open Calendar"
-                  />
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-[2rem] border-emerald-200 bg-emerald-50 shadow-sm">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-2 font-black text-emerald-950">
-                  <CheckCircle2 className="size-5" /> Next best action
-                </div>
-                <p className="mt-3 text-sm leading-6 text-emerald-900">
-                  {nextAction
-                    ? `${nextAction.subject} is the best card to review next.`
-                    : "Connect and sync Gmail to create your first AI workflow card."}
-                </p>
-                <Button
-                  asChild
-                  className="mt-4 rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
-                >
-                  <Link href={nextAction ? "/gmail" : "/briefing"}>
-                    {nextAction ? "Review in Gmail" : "Start setup"}
-                    <ArrowRight className="ml-2 size-4" />
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2">
-          <QuickAction
-            icon={MailCheck}
-            title="Sync Gmail"
-            text="Pull fresh messages and turn them into workflow cards."
-            href="/gmail"
-          />
-          <QuickAction
-            icon={CalendarCheck}
-            title="Sync Calendar"
-            text="Load upcoming meetings and prep context for the day."
-            href="/calendar"
-          />
+              </div>
+            </CardContent>
+          </Card>
         </section>
       </section>
     </AppShell>
   );
 }
 
-function BriefingMetric({
-  label,
-  value,
+function DecisionSection({
+  eyebrow,
+  title,
+  icon: Icon,
+  ctaHref,
+  ctaLabel,
+  children,
 }: {
-  label: string;
-  value: string | number;
+  eyebrow: string;
+  title: string;
+  icon: typeof Inbox;
+  ctaHref: string;
+  ctaLabel: string;
+  children: React.ReactNode;
 }) {
   return (
-    <Card className="rounded-[2rem] border-white/70 bg-white/80 shadow-sm">
-      <CardContent className="p-5">
-        <p className="text-3xl font-black tracking-tight text-slate-950">
-          {value}
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-500">{label}</p>
+    <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03]">
+      <CardContent className="p-5 md:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+              {eyebrow}
+            </p>
+            <h2 className="mt-2 flex items-center gap-2 text-2xl font-black tracking-tight text-slate-950">
+              <Icon className="size-5 shrink-0 text-slate-500" />
+              {title}
+            </h2>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full rounded-xl bg-white sm:w-auto"
+          >
+            <Link href={ctaHref}>
+              {ctaLabel}
+              <ArrowRight className="ml-2 size-4" />
+            </Link>
+          </Button>
+        </div>
+        <div className="mt-5">{children}</div>
       </CardContent>
     </Card>
   );
 }
 
-function EmptyBriefing({
+function PriorityItem({
+  tone,
+  title,
+  text,
+  href,
+  action,
+}: {
+  tone: "urgent" | "normal" | "quiet";
+  title: string;
+  text: string;
+  href: string;
+  action: string;
+}) {
+  const toneClass =
+    tone === "urgent"
+      ? "border-red-200 bg-red-50"
+      : tone === "normal"
+        ? "border-blue-200 bg-blue-50"
+        : "border-slate-200 bg-slate-50";
+
+  return (
+    <Link
+      href={href}
+      className={`block rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-slate-900/5 ${toneClass}`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="font-black tracking-tight text-slate-950">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{text}</p>
+        </div>
+        <span className="shrink-0 text-sm font-black text-slate-950">
+          {action}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function RecommendationItem({
+  title,
+  text,
+  href,
+}: {
+  title: string;
+  text: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-2xl border border-emerald-200 bg-emerald-50 p-4 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-slate-900/5"
+    >
+      <div className="flex items-start gap-3">
+        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-700" />
+        <div className="min-w-0">
+          <h3 className="font-black tracking-tight text-emerald-950">
+            {title}
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-emerald-900">{text}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function ScheduleItem({
+  title,
+  time,
+  attendees,
+}: {
+  title: string;
+  time: string;
+  attendees: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-[#f6f7f9] p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="font-black tracking-tight text-slate-950">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            {attendees} attendee{attendees === 1 ? "" : "s"}
+          </p>
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5 text-sm font-black text-slate-700">
+          <Clock3 className="size-4" />
+          {time}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({
   title,
   text,
   href,
@@ -304,47 +356,126 @@ function EmptyBriefing({
   action: string;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-[#f6f7f9] p-5">
       <h3 className="font-black tracking-tight">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
-      <Button asChild variant="outline" className="mt-4 rounded-full bg-white">
+      <Button asChild variant="outline" className="mt-4 rounded-xl bg-white">
         <Link href={href}>{action}</Link>
       </Button>
     </div>
   );
 }
 
-function QuickAction({
-  icon: Icon,
-  title,
-  text,
-  href,
+function buildPriorities({
+  urgent,
+  aiReady,
+  meetingAsks,
+  needsAi,
 }: {
-  icon: typeof MailCheck;
-  title: string;
-  text: string;
-  href: string;
+  urgent: { subject: string; summary: string | null; snippet: string }[];
+  aiReady: { subject: string; summary: string | null; snippet: string }[];
+  meetingAsks: { subject: string; summary: string | null; snippet: string }[];
+  needsAi: { subject: string; summary: string | null; snippet: string }[];
 }) {
-  return (
-    <Card className="rounded-[2rem] border-white/70 bg-white/80 shadow-sm">
-      <CardContent className="flex items-center justify-between gap-4 p-5">
-        <div className="flex items-center gap-4">
-          <div className="grid size-11 place-items-center rounded-2xl bg-slate-950 text-white">
-            <Icon className="size-5" />
-          </div>
-          <div>
-            <h3 className="font-black tracking-tight">{title}</h3>
-            <p className="mt-1 text-sm text-slate-600">{text}</p>
-          </div>
-        </div>
-        <Button asChild size="icon" className="rounded-full">
-          <Link href={href}>
-            <ArrowRight className="size-4" />
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
+  const priorities = [];
+  const urgentItem = urgent[0];
+  const aiReadyItem = aiReady[0];
+  const meetingAsk = meetingAsks[0];
+
+  if (urgentItem) {
+    priorities.push({
+      tone: "urgent" as const,
+      title: urgentItem.subject,
+      text: urgentItem.summary ?? urgentItem.snippet,
+      href: "/gmail",
+      action: "Review now",
+    });
+  }
+
+  if (aiReadyItem) {
+    priorities.push({
+      tone: "normal" as const,
+      title: aiReadyItem.subject,
+      text: aiReadyItem.summary ?? aiReadyItem.snippet,
+      href: "/workflows",
+      action: "Approve",
+    });
+  }
+
+  if (meetingAsk) {
+    priorities.push({
+      tone: "normal" as const,
+      title: meetingAsk.subject,
+      text: meetingAsk.summary ?? meetingAsk.snippet,
+      href: "/calendar",
+      action: "Schedule",
+    });
+  }
+
+  if (priorities.length === 0) {
+    priorities.push({
+      tone: "quiet" as const,
+      title: needsAi[0]?.subject ?? "No urgent decisions detected",
+      text: needsAi[0]
+        ? "Generate an AI card so TriageOS can recommend the next action."
+        : "Sync Inbox and Schedule to populate your operating room.",
+      href: needsAi[0] ? "/gmail" : "/gmail",
+      action: needsAi[0] ? "Generate AI" : "Sync Inbox",
+    });
+  }
+
+  return priorities.slice(0, 3);
+}
+
+function buildRecommendations({
+  aiReady,
+  meetingAsks,
+  needsAi,
+  eventCount,
+}: {
+  aiReady: { subject: string }[];
+  meetingAsks: { subject: string }[];
+  needsAi: { subject: string }[];
+  eventCount: number;
+}) {
+  const recommendations = [];
+
+  if (aiReady.length) {
+    recommendations.push({
+      title: "Approve the highest-confidence bundle",
+      text: `${aiReady[0].subject} is ready for review before TriageOS creates anything.`,
+      href: "/workflows",
+    });
+  }
+
+  if (meetingAsks.length) {
+    recommendations.push({
+      title: "Convert meeting asks into scheduled decisions",
+      text: `${meetingAsks.length} message${meetingAsks.length === 1 ? "" : "s"} appear to need calendar action.`,
+      href: "/calendar",
+    });
+  }
+
+  if (needsAi.length) {
+    recommendations.push({
+      title: "Generate context for unresolved messages",
+      text: `${needsAi.length} inbox item${needsAi.length === 1 ? "" : "s"} still need AI interpretation.`,
+      href: "/gmail",
+    });
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push({
+      title: "Protect the next focus block",
+      text:
+        eventCount > 0
+          ? "Use Schedule to prep the next meeting and avoid reactive work."
+          : "Sync Schedule and Inbox so TriageOS can recommend the next move.",
+      href: eventCount > 0 ? "/calendar" : "/gmail",
+    });
+  }
+
+  return recommendations.slice(0, 3);
 }
 
 function formatTime(value: string | null) {
@@ -368,27 +499,20 @@ function buildSmartDayPlan({
   meetingAskCount: number;
 }) {
   const nextEvent = events.find((event) => event.startTime);
-  const plan = [
+
+  return [
     urgentCount
-      ? `Start with ${urgentCount} urgent inbox decision${urgentCount === 1 ? "" : "s"} before meetings begin.`
-      : "Start with a 20 minute inbox scan and clear anything that blocks the day.",
+      ? `Resolve ${urgentCount} urgent inbox decision${urgentCount === 1 ? "" : "s"} first.`
+      : "Start with the next unresolved inbox decision.",
     nextEvent
-      ? `Prep ${nextEvent.title} before ${formatTime(nextEvent.startTime)} using Gmail context and attendee notes.`
-      : "Protect the first open block for focused work; no synced meeting is currently competing for attention.",
+      ? `Prep ${nextEvent.title} before ${formatTime(nextEvent.startTime)}.`
+      : "Protect the first open focus block.",
     aiReadyCount
-      ? `Approve or edit ${aiReadyCount} AI-ready workflow card${aiReadyCount === 1 ? "" : "s"} when the recommendations look right.`
-      : "Generate AI cards for the next Gmail messages before approving any external action.",
+      ? `Approve ${aiReadyCount} AI-ready workflow${aiReadyCount === 1 ? "" : "s"} after review.`
+      : meetingAskCount
+        ? `Turn ${meetingAskCount} meeting ask${meetingAskCount === 1 ? "" : "s"} into scheduled actions.`
+        : "Sync context before approving external actions.",
   ];
-
-  if (meetingAskCount) {
-    plan.push(
-      `Resolve ${meetingAskCount} meeting ask${meetingAskCount === 1 ? "" : "s"} by turning approved emails into drafts and calendar events.`,
-    );
-  } else {
-    plan.push("End with a Calendar sync so tomorrow's briefing starts with fresh context.");
-  }
-
-  return plan;
 }
 
 function calculateFocusScore({
@@ -411,10 +535,10 @@ function calculateFocusScore({
   );
   const reason =
     score >= 80
-      ? "High confidence: integrations are connected and the workload is reviewable."
+      ? "Clear enough to execute after review."
       : score >= 60
-        ? "Moderate focus: clear the urgent inbox items and prep the next meeting."
-        : "Low focus: sync context, resolve urgent messages, and avoid approving actions until details are reviewed.";
+        ? "Good, but urgent items need attention."
+        : "Needs fresh Inbox and Schedule context.";
 
   return { score, reason };
 }

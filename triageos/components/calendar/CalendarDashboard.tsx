@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  AlertTriangle,
+  Brain,
   CalendarCheck2,
   CalendarDays,
   ChevronLeft,
@@ -18,7 +20,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +100,16 @@ type CalendarDay = {
   events: CalendarEvent[];
 };
 
+type MeetingReadiness = "Ready" | "Needs Preparation" | "Missing Context";
+
+type MeetingIntelligence = {
+  event: CalendarEvent;
+  readiness: MeetingReadiness;
+  whyItMatters: string;
+  preparation: string;
+  recommendation: string;
+};
+
 export function CalendarDashboard({
   initialConnected,
   connectionVerified,
@@ -161,6 +173,31 @@ export function CalendarDashboard({
       null,
     [calendarModel.days, selectedDateKey],
   );
+  const upcomingEvents = useMemo(
+    () => sortedEvents.filter((event) => getTimeValue(event.startTime) >= 0),
+    [sortedEvents],
+  );
+  const meetingIntelligence = useMemo(
+    () => upcomingEvents.map(toMeetingIntelligence),
+    [upcomingEvents],
+  );
+  const readinessCounts = useMemo(
+    () =>
+      meetingIntelligence.reduce<Record<MeetingReadiness, number>>(
+        (acc, item) => {
+          acc[item.readiness] += 1;
+          return acc;
+        },
+        { Ready: 0, "Needs Preparation": 0, "Missing Context": 0 },
+      ),
+    [meetingIntelligence],
+  );
+  const primaryRecommendation =
+    meetingIntelligence.find((item) => item.readiness !== "Ready")
+      ?.recommendation ??
+    (upcomingEvents.length
+      ? "Block focus time around meetings that already look prepared."
+      : "Sync Calendar to identify readiness, risks, and focus opportunities.");
   const connectCorsair = useCallback(() => {
     startTransition(async () => {
       setError(null);
@@ -365,30 +402,41 @@ export function CalendarDashboard({
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="overflow-hidden rounded-[2rem] border-white/70 bg-white/85 shadow-sm backdrop-blur-xl">
-        <CardHeader className="relative overflow-hidden p-6 md:p-8">
-          <div className="absolute right-8 top-6 size-32 rounded-full bg-blue-200/40 blur-3xl" />
-          <div className="absolute bottom-0 left-1/2 size-28 rounded-full bg-emerald-200/40 blur-3xl" />
-          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-6 overflow-x-hidden">
+      <Card className="overflow-hidden rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03]">
+        <CardContent className="space-y-5 p-5 md:p-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <Badge className="rounded-full bg-blue-100 text-blue-800 hover:bg-blue-100">
-                <CalendarDays className="mr-1.5 size-3.5" /> Google Calendar via
-                Corsair
+              <Badge className="rounded-lg bg-slate-950 text-white hover:bg-slate-950">
+                <Sparkles className="mr-1.5 size-3.5" /> Scheduling Intelligence
               </Badge>
-              <CardTitle className="mt-4 text-3xl font-black tracking-tight md:text-4xl">
-                Calendar cockpit
-              </CardTitle>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                A real month-style calendar for upcoming meetings, with a side
-                panel that turns events into a quick planning summary.
+              <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.02] tracking-tight md:text-6xl">
+                Know which meetings are ready, risky, or missing context.
+              </h1>
+              <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
+                TriageOS reads your schedule like an AI Chief of Staff: what
+                matters, what needs preparation, and where focus time can be
+                protected.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-[#f6f7f9] p-3 lg:w-[30rem]">
+              <ReadinessMetric label="Ready" value={readinessCounts.Ready} />
+              <ReadinessMetric
+                label="Needs Prep"
+                value={readinessCounts["Needs Preparation"]}
+              />
+              <ReadinessMetric
+                label="Missing"
+                value={readinessCounts["Missing Context"]}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               {isConnected ? (
                 <Button
                   onClick={openNewEventDialog}
-                  className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
+                  className="rounded-xl bg-slate-950 text-white hover:bg-slate-800"
                 >
                   <Plus className="mr-2 size-4" /> Add event
                 </Button>
@@ -398,7 +446,7 @@ export function CalendarDashboard({
                   onClick={createCalendarSummary}
                   disabled={isPending}
                   variant="outline"
-                  className="rounded-full border-blue-200 bg-white/80"
+                  className="rounded-xl bg-white"
                 >
                   {isPending ? (
                     <Loader2 className="mr-2 size-4 animate-spin" />
@@ -411,7 +459,7 @@ export function CalendarDashboard({
               <Button
                 onClick={isConnected ? syncCalendar : connectCorsair}
                 disabled={isPending}
-                className="rounded-full bg-blue-700 text-white hover:bg-blue-600"
+                className="rounded-xl bg-slate-950 text-white hover:bg-slate-800"
               >
                 {isPending ? (
                   <Loader2 className="mr-2 size-4 animate-spin" />
@@ -420,12 +468,10 @@ export function CalendarDashboard({
                 ) : (
                   <PlugZap className="mr-2 size-4" />
                 )}
-                {isConnected ? "Sync Calendar" : "Connect Calendar"}
+                {isConnected ? "Sync Schedule" : "Connect Schedule"}
               </Button>
-            </div>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-5 p-6 pt-0 md:p-8 md:pt-0">
+
           {error ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {error}
@@ -438,7 +484,7 @@ export function CalendarDashboard({
           ) : null}
           {isConnected && !connectionVerified ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Connection returned from Corsair. Use Sync Calendar to verify
+              Connection returned from Corsair. Use Sync Schedule to verify
               access and load events.
             </div>
           ) : null}
@@ -493,32 +539,99 @@ export function CalendarDashboard({
             </div>
           ) : null}
 
+          {isConnected ? (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-[1.5rem] border border-slate-200 bg-[#f6f7f9] p-4 md:p-5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                      Meeting readiness
+                    </p>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight">
+                      What needs preparation before it starts
+                    </h2>
+                  </div>
+                  <Badge className="w-fit rounded-lg bg-slate-950 text-white hover:bg-slate-950">
+                    {upcomingEvents.length} upcoming
+                  </Badge>
+                </div>
+
+                {meetingIntelligence.length ? (
+                  <div className="mt-5 grid gap-3">
+                    {meetingIntelligence.slice(0, 5).map((item) => (
+                      <MeetingReadinessCard
+                        key={item.event.id}
+                        item={item}
+                        isPreparing={preparingEventId === item.event.id}
+                        hasPrep={meetingPrep?.eventId === item.event.id}
+                        onPrep={() => createMeetingPrep(item.event.id)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
+                    <CalendarDays className="mx-auto size-8 text-slate-400" />
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                      Sync Schedule to let TriageOS evaluate meeting readiness,
+                      time risks, and focus opportunities.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <aside className="space-y-4 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/[0.03]">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                    AI recommendations
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight">
+                    Next best scheduling move
+                  </h2>
+                </div>
+                <div className="rounded-2xl bg-slate-950 p-4 text-white">
+                  <Sparkles className="size-5 text-emerald-300" />
+                  <p className="mt-3 text-sm font-semibold leading-6 text-white/80">
+                    {primaryRecommendation}
+                  </p>
+                </div>
+                <RecommendationList
+                  title="Focus opportunities"
+                  items={buildFocusOpportunities(upcomingEvents)}
+                />
+                <RecommendationList
+                  title="Time risks"
+                  items={buildTimeRisks(meetingIntelligence)}
+                />
+              </aside>
+            </section>
+          ) : null}
+
           {!isConnected ? (
-            <section className="rounded-[1.75rem] border border-dashed border-blue-300 bg-blue-50 p-10 text-center">
-              <PlugZap className="mx-auto size-10 text-blue-700" />
+            <section className="rounded-[1.5rem] border border-dashed border-slate-300 bg-[#f6f7f9] p-10 text-center">
+              <PlugZap className="mx-auto size-10 text-slate-600" />
               <h3 className="mt-4 text-2xl font-black tracking-tight">
-                Connect Google Calendar to unlock the calendar cockpit
+                Connect Schedule context
               </h3>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                Once Corsair confirms Calendar access, this page will show the
-                month grid, day summary, event creation, reminders, and sync
-                actions.
+                Once Corsair confirms Calendar access, TriageOS will evaluate
+                meeting readiness, preparation gaps, time risks, and focus
+                opportunities.
               </p>
               <Button
                 onClick={connectCorsair}
                 disabled={isPending}
-                className="mt-5 rounded-full bg-blue-700 text-white hover:bg-blue-600"
+                className="mt-5 rounded-xl bg-slate-950 text-white hover:bg-slate-800"
               >
-                <PlugZap className="mr-2 size-4" /> Connect Calendar
+                <PlugZap className="mr-2 size-4" /> Connect Schedule
               </Button>
             </section>
           ) : (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-3 shadow-inner md:p-5">
+              <div className="rounded-[1.5rem] border border-slate-200 bg-[#f6f7f9] p-3 md:p-5">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-700">
-                      Month view
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
+                      Calendar grid
                     </p>
                     <div className="mt-1 flex items-center gap-2">
                       <Button
@@ -545,10 +658,10 @@ export function CalendarDashboard({
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-                    <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+                      <span className="rounded-lg bg-white px-3 py-1.5 shadow-sm">
                       {sortedEvents.length} events
                     </span>
-                    <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+                      <span className="rounded-lg bg-white px-3 py-1.5 shadow-sm">
                       {countAttendees(sortedEvents)} attendees
                     </span>
                   </div>
@@ -758,6 +871,197 @@ export function CalendarDashboard({
       </Dialog>
     </div>
   );
+}
+
+function ReadinessMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-white p-3 shadow-sm shadow-slate-900/[0.03]">
+      <p className="text-2xl font-black tracking-tight text-slate-950">
+        {value}
+      </p>
+      <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function MeetingReadinessCard({
+  item,
+  isPreparing,
+  hasPrep,
+  onPrep,
+}: {
+  item: MeetingIntelligence;
+  isPreparing: boolean;
+  hasPrep: boolean;
+  onPrep: () => void;
+}) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.03]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={readinessClass(item.readiness)}>
+              {item.readiness}
+            </Badge>
+            <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+              <Clock3 className="size-3.5" />
+              {formatTime(item.event.startTime)}
+            </span>
+          </div>
+          <h3 className="mt-3 text-xl font-black tracking-tight text-slate-950">
+            {item.event.title}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {item.whyItMatters}
+          </p>
+        </div>
+        <Button
+          type="button"
+          onClick={onPrep}
+          disabled={isPreparing}
+          variant={hasPrep ? "outline" : "default"}
+          className={
+            hasPrep
+              ? "rounded-xl bg-white"
+              : "rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+          }
+        >
+          {isPreparing ? (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          ) : (
+            <Brain className="mr-2 size-4" />
+          )}
+          {hasPrep ? "Prep ready" : "Prepare"}
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <ReadinessDetail
+          icon={Sparkles}
+          label="Before this"
+          value={item.preparation}
+        />
+        <ReadinessDetail
+          icon={CalendarCheck2}
+          label="AI recommends"
+          value={item.recommendation}
+        />
+      </div>
+    </article>
+  );
+}
+
+function ReadinessDetail({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Sparkles;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-[#f6f7f9] p-3">
+      <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        <Icon className="size-3.5" />
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function RecommendationList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-[#f6f7f9] p-4">
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        {title}
+      </p>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2 text-sm font-semibold leading-6 text-slate-700">
+            <AlertTriangle className="mt-1 size-4 shrink-0 text-slate-400" />
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function toMeetingIntelligence(event: CalendarEvent): MeetingIntelligence {
+  const hasDescription = Boolean(event.description?.trim());
+  const hasAttendees = event.attendees.length > 0;
+  const title = event.title.toLowerCase();
+  const isHighSignal =
+    title.includes("review") ||
+    title.includes("sync") ||
+    title.includes("customer") ||
+    title.includes("investor") ||
+    title.includes("launch");
+  const readiness: MeetingReadiness = hasDescription
+    ? "Ready"
+    : hasAttendees
+      ? "Needs Preparation"
+      : "Missing Context";
+
+  return {
+    event,
+    readiness,
+    whyItMatters: isHighSignal
+      ? "This meeting likely affects an active decision or external commitment."
+      : hasAttendees
+        ? "This meeting involves other people and should have a clear outcome."
+        : "The meeting exists, but TriageOS needs more context to assess impact.",
+    preparation:
+      readiness === "Ready"
+        ? "Review agenda and confirm the desired outcome."
+        : readiness === "Needs Preparation"
+          ? "Prepare talking points and check whether a reply is needed before it starts."
+          : "Add context, attendees, or an agenda so TriageOS can prepare you.",
+    recommendation:
+      readiness === "Ready"
+        ? "Review agenda"
+        : readiness === "Needs Preparation"
+          ? "Prepare talking points"
+          : "Add missing context",
+  };
+}
+
+function readinessClass(readiness: MeetingReadiness) {
+  if (readiness === "Ready") {
+    return "rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-100";
+  }
+  if (readiness === "Needs Preparation") {
+    return "rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-100";
+  }
+  return "rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-200";
+}
+
+function buildFocusOpportunities(events: CalendarEvent[]) {
+  if (events.length === 0) return ["Sync Schedule to find open focus blocks."];
+  if (events.length <= 2) return ["Block focus time around your prepared meetings."];
+  return ["Protect a focus block before the densest meeting cluster."];
+}
+
+function buildTimeRisks(items: MeetingIntelligence[]) {
+  const missing = items.filter((item) => item.readiness === "Missing Context").length;
+  const prep = items.filter((item) => item.readiness === "Needs Preparation").length;
+  const risks = [];
+  if (missing) risks.push(`${missing} meeting${missing === 1 ? "" : "s"} missing context.`);
+  if (prep) risks.push(`${prep} meeting${prep === 1 ? "" : "s"} need preparation.`);
+  if (risks.length === 0) risks.push("No obvious time risks detected.");
+  return risks;
 }
 
 function buildCalendarModel(

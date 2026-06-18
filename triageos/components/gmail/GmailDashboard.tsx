@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   Bot,
   CalendarClock,
   CheckCircle2,
-  Clock3,
+  Hourglass,
   Inbox,
   Loader2,
   Mail,
@@ -18,7 +25,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -89,6 +96,35 @@ type FollowUpResponse = {
   error?: string;
 };
 
+type DecisionCategory =
+  | "Needs Reply"
+  | "Urgent"
+  | "Meeting Requests"
+  | "Follow-Ups"
+  | "Waiting On Others"
+  | "FYI";
+
+const decisionCategories: DecisionCategory[] = [
+  "Needs Reply",
+  "Urgent",
+  "Meeting Requests",
+  "Follow-Ups",
+  "Waiting On Others",
+  "FYI",
+];
+
+type DecisionCard = {
+  item: GmailItem;
+  sender: string;
+  company: string;
+  category: DecisionCategory;
+  waitingTime: string;
+  aiInsight: string;
+  recommendedAction: string;
+  confidence: number;
+  cta: "Review" | "Draft Reply" | "Schedule" | "Mark Resolved";
+};
+
 export function GmailDashboard({
   initialConnected,
   connectionVerified,
@@ -110,7 +146,11 @@ export function GmailDashboard({
   const [error, setError] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
-  const [followUps, setFollowUps] = useState<FollowUpResponse["detection"] | null>(null);
+  const [followUps, setFollowUps] = useState<
+    FollowUpResponse["detection"] | null
+  >(null);
+  const [selectedCategory, setSelectedCategory] =
+    useState<DecisionCategory>("Needs Reply");
   const [isPending, startTransition] = useTransition();
 
   const selectedItem = useMemo(
@@ -118,12 +158,52 @@ export function GmailDashboard({
     [items, selectedItemId],
   );
   const aiReady = items.filter((item) => Boolean(item.suggestedReply)).length;
-  const needsAi = items.filter((item) => !item.suggestedReply).length;
   const urgent = items.filter((item) => item.priorityLabel === "urgent").length;
   const meetingAsks = items.filter(
     (item) => item.workflowType === "meeting_request",
   ).length;
   const nextNeedsAi = items.find((item) => !item.suggestedReply);
+  const decisionCards = useMemo(() => items.map(toDecisionCard), [items]);
+  const categoryCounts = useMemo(
+    () =>
+      decisionCategories.reduce<Record<DecisionCategory, number>>(
+        (acc, category) => {
+          acc[category] = decisionCards.filter(
+            (card) => card.category === category,
+          ).length;
+          return acc;
+        },
+        {
+          "Needs Reply": 0,
+          Urgent: 0,
+          "Meeting Requests": 0,
+          "Follow-Ups": 0,
+          "Waiting On Others": 0,
+          FYI: 0,
+        },
+      ),
+    [decisionCards],
+  );
+  const fallbackCategory = decisionCategories.find(
+    (category) => categoryCounts[category] > 0,
+  );
+  const activeCategory =
+    categoryCounts[selectedCategory] > 0 || !fallbackCategory
+      ? selectedCategory
+      : fallbackCategory;
+  const visibleCards = decisionCards.filter(
+    (card) => card.category === activeCategory,
+  );
+  const attentionCount = decisionCards.filter(
+    (card) => card.category !== "FYI",
+  ).length;
+  const narrative = buildInboxNarrative({
+    attentionCount,
+    urgent,
+    meetingAsks,
+    followUps: categoryCounts["Follow-Ups"],
+    waiting: categoryCounts["Waiting On Others"],
+  });
 
   const connectCorsair = useCallback(() => {
     startTransition(async () => {
@@ -166,13 +246,13 @@ export function GmailDashboard({
       const payload = (await response.json()) as ApiResponse;
 
       if (!response.ok || payload.error) {
-        setError(payload.error ?? "Unable to sync Gmail.");
+        setError(payload.error ?? "Unable to sync Inbox.");
         return;
       }
 
       setItems(payload.items ?? []);
       setMessage(
-        `Synced ${payload.imported ?? 0} Gmail message${payload.imported === 1 ? "" : "s"}.`,
+        `Synced ${payload.imported ?? 0} conversation${payload.imported === 1 ? "" : "s"} into the AI Inbox.`,
       );
     });
   };
@@ -193,7 +273,7 @@ export function GmailDashboard({
       setAnalyzingId(null);
 
       if (!response.ok || payload.error || !payload.item) {
-        setError(payload.error ?? "Unable to generate AI workflow card.");
+        setError(payload.error ?? "Unable to generate AI decision card.");
         return;
       }
 
@@ -203,7 +283,7 @@ export function GmailDashboard({
         ),
       );
       setSelectedItemId(payload.item.id);
-      setMessage("AI workflow card updated for this Gmail message.");
+      setMessage("AI decision card updated for this conversation.");
     });
   };
 
@@ -286,245 +366,193 @@ export function GmailDashboard({
 
   return (
     <>
-      <Card className="rounded-[2rem] border-white/70 bg-white/80 shadow-sm">
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <Badge className="rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-              <MailCheck className="mr-1.5 size-3.5" /> Gmail via Corsair
-            </Badge>
-            <CardTitle className="mt-4 text-3xl font-black tracking-tight">
-              AI inbox triage
-            </CardTitle>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Start with the messages that need a decision, generate workflow
-              cards, then approve safe drafts and calendar actions.
-            </p>
-          </div>
-          <Button
-            onClick={isConnected ? syncGmail : connectCorsair}
-            disabled={isPending}
-            className="rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
-          >
-            {isPending && !analyzingId ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : isConnected ? (
-              <RefreshCw className="mr-2 size-4" />
-            ) : (
-              <PlugZap className="mr-2 size-4" />
-            )}
-            {isConnected ? "Sync Gmail" : "Connect Gmail"}
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {error}
-            </div>
-          ) : null}
-          {message ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-              {message}
-            </div>
-          ) : null}
-          {isConnected && !connectionVerified ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Connection returned from Corsair. Use Sync Gmail to verify access
-              and load messages.
-            </div>
-          ) : null}
-          {isConnected ? (
-            <section className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50 p-5">
-              <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-                <div>
-                  <div className="flex flex-wrap gap-2">
-                    <MetricPill label="AI ready" value={aiReady} />
-                    <MetricPill label="Needs AI" value={needsAi} />
-                    <MetricPill label="Urgent" value={urgent} />
-                    <MetricPill label="Meeting asks" value={meetingAsks} />
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-emerald-900">
-                    {nextNeedsAi
-                      ? `Next up: ${nextNeedsAi.subject}`
-                      : items.length
-                        ? "Every loaded message has an AI workflow card."
-                        : "Sync Gmail to create your first workflow cards."}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  onClick={items.length ? analyzeNextItem : syncGmail}
-                  disabled={isPending}
-                  className="rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
-                >
-                  {isPending ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="mr-2 size-4" />
-                  )}
-                  {items.length ? "Generate next AI card" : "Sync Gmail"}
-                </Button>
-                {items.length ? (
-                  <Button
-                    type="button"
-                    onClick={detectFollowUps}
-                    disabled={isPending}
-                    variant="outline"
-                    className="rounded-full border-emerald-200 bg-white"
-                  >
-                    {isPending ? (
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="mr-2 size-4" />
-                    )}
-                    Detect follow-ups
-                  </Button>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-          {followUps ? (
-            <section className="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-black text-amber-950">
-                    <Sparkles className="size-4" /> Follow-Up Detection
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-amber-900">
-                    TriageOS found messages that likely need a nudge, reply, or
-                    scheduling action. Review each before approval.
-                  </p>
-                </div>
-                <Badge className="w-fit rounded-full bg-white text-amber-800 hover:bg-white">
-                  {followUps.generatedBy === "openai" ? "OpenAI" : "Fallback"}
+      <section className="mx-auto w-full max-w-6xl space-y-5 overflow-x-hidden">
+        <Card className="overflow-hidden rounded-[1.5rem] border-slate-200 bg-white text-slate-950 shadow-sm shadow-slate-900/[0.03]">
+          <CardContent className="p-5 md:p-7">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <Badge className="rounded-lg bg-slate-950 text-white hover:bg-slate-950">
+                  <Sparkles className="mr-1.5 size-3.5" /> AI Inbox
                 </Badge>
+                <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.02] tracking-tight md:text-6xl">
+                  Conversations, ordered by decisions.
+                </h1>
+                <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
+                  {narrative}
+                </p>
               </div>
-              <div className="mt-4 grid gap-3">
-                {followUps.candidates.length ? (
-                  followUps.candidates.map((candidate) => (
-                    <article
-                      key={`${candidate.subject}-${candidate.suggestedAction}`}
-                      className="rounded-2xl border border-amber-200 bg-white/80 p-4"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <PriorityBadge label={candidate.urgency} />
-                        <h3 className="font-black tracking-tight">
-                          {candidate.subject}
-                        </h3>
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-slate-700">
-                        {candidate.reason}
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-amber-950">
-                        {candidate.suggestedAction}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-amber-800">
-                        {candidate.approvalNote}
-                      </p>
-                    </article>
-                  ))
-                ) : (
-                  <p className="rounded-2xl border border-amber-200 bg-white/80 p-4 text-sm text-amber-900">
-                    No follow-up candidates detected in the current Gmail set.
-                  </p>
-                )}
+              <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-[#f6f7f9] p-3 sm:w-auto sm:min-w-72">
+                <MiniSignal label="Attention" value={attentionCount} />
+                <MiniSignal label="AI ready" value={aiReady} />
               </div>
-            </section>
-          ) : null}
-          {!isConnected ? (
-            <div className="rounded-[1.5rem] border border-dashed border-emerald-300 bg-emerald-50 p-10 text-center">
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03]">
+          <CardContent className="space-y-5 p-5 md:p-6">
+            {error ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+            {message ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                {message}
+              </div>
+            ) : null}
+            {isConnected && !connectionVerified ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                Connection returned from Corsair. Use Sync to verify access and
+                load the latest conversations.
+              </div>
+            ) : null}
+            {!isConnected ? (
+              <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-[#f6f7f9] p-10 text-center">
               <PlugZap className="mx-auto size-10 text-emerald-700" />
               <h3 className="mt-4 text-xl font-black tracking-tight">
-                Connect Gmail to start syncing
+                Connect Inbox context
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-                Corsair handles OAuth. Once Gmail is connected, this page will
-                show the Sync Gmail action instead.
+                Corsair connects Gmail so TriageOS can classify conversations
+                by decisions.
               </p>
               <Button
                 onClick={connectCorsair}
                 disabled={isPending}
-                className="mt-5 rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
+                className="mt-5 rounded-xl bg-slate-950 text-white hover:bg-slate-800"
               >
-                <PlugZap className="mr-2 size-4" /> Connect Gmail
+                <PlugZap className="mr-2 size-4" /> Connect Inbox
               </Button>
             </div>
-          ) : items.length === 0 ? (
-            <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+            ) : items.length === 0 ? (
+              <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-[#f6f7f9] p-10 text-center">
               <Inbox className="mx-auto size-10 text-slate-400" />
               <h3 className="mt-4 text-xl font-black tracking-tight">
-                No Gmail messages loaded
+                No conversations loaded
               </h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+                Sync once to let TriageOS build your decision categories.
+              </p>
+              <Button
+                onClick={syncGmail}
+                disabled={isPending}
+                className="mt-5 rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+              >
+                <RefreshCw className="mr-2 size-4" /> Sync Inbox
+              </Button>
             </div>
-          ) : (
-            <div className="grid gap-3">
-              {items.map((item) => (
-                <article
-                  key={item.id}
-                  className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedItemId(item.id)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <PriorityBadge label={item.priorityLabel} />
-                        <Badge
-                          variant="outline"
-                          className="rounded-full capitalize"
-                        >
-                          {item.workflowType.replaceAll("_", " ")}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="rounded-full capitalize"
-                        >
-                          {item.status}
-                        </Badge>
-                        {item.suggestedReply ? (
-                          <Badge className="rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-                            <Sparkles className="mr-1 size-3" /> AI ready
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <h3 className="mt-3 truncate text-lg font-black tracking-tight">
-                        {item.subject}
-                      </h3>
-                      <p className="mt-1 text-sm text-slate-500">
-                        From {item.fromEmail}
-                      </p>
-                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
-                        {item.summary ?? item.snippet ?? item.bodyPreview}
-                      </p>
-                    </button>
-                    <div className="flex shrink-0 flex-col items-start gap-3 md:items-end">
-                      <div className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-                        <Clock3 className="size-3.5" />
-                        {formatDate(item.receivedAt)}
-                      </div>
-                      <Button
-                        type="button"
-                        onClick={() => analyzeItem(item.id)}
-                        disabled={analyzingId === item.id}
-                        size="sm"
-                        className="rounded-full bg-emerald-600 text-white hover:bg-emerald-500"
-                      >
-                        {analyzingId === item.id ? (
-                          <Loader2 className="mr-2 size-4 animate-spin" />
-                        ) : (
-                          <Bot className="mr-2 size-4" />
-                        )}
-                        {item.suggestedReply ? "Regenerate AI" : "Generate AI"}
-                      </Button>
-                    </div>
+            ) : (
+              <>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {decisionCategories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setSelectedCategory(category)}
+                    className={`shrink-0 rounded-xl border px-4 py-2 text-sm font-black transition ${
+                      activeCategory === category
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-950"
+                    }`}
+                  >
+                    {category}
+                    <span className="ml-2 text-xs opacity-70">
+                      {categoryCounts[category]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                {visibleCards.length ? (
+                  visibleCards.map((card) => (
+                    <ConversationCard
+                      key={card.item.id}
+                      card={card}
+                      isAnalyzing={analyzingId === card.item.id}
+                      onReview={() => setSelectedItemId(card.item.id)}
+                      onAnalyze={() => analyzeItem(card.item.id)}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-[#f6f7f9] p-6 text-center lg:col-span-2">
+                    <p className="font-black tracking-tight">
+                      No {activeCategory.toLowerCase()} conversations.
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Choose another decision category or sync fresh context.
+                    </p>
                   </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                )}
+              </div>
+
+              <div className="rounded-[1.25rem] border border-slate-200 bg-[#f6f7f9] p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                      Operations
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Sync and detection are secondary. The decision layer is
+                      the source of truth.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      onClick={items.length ? analyzeNextItem : syncGmail}
+                      disabled={isPending}
+                      className="rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+                    >
+                      {isPending ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="mr-2 size-4" />
+                      )}
+                      {nextNeedsAi ? "Generate next AI card" : "Review next"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={detectFollowUps}
+                      disabled={isPending}
+                      variant="outline"
+                      className="rounded-xl bg-white"
+                    >
+                      <Hourglass className="mr-2 size-4" />
+                      Detect follow-ups
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={syncGmail}
+                      disabled={isPending}
+                      variant="outline"
+                      className="rounded-xl bg-white"
+                    >
+                      <RefreshCw className="mr-2 size-4" />
+                      Sync
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {followUps ? (
+                <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 p-4">
+                  <p className="font-black text-amber-950">
+                    {followUps.candidates.length} follow-up candidate
+                    {followUps.candidates.length === 1 ? "" : "s"} detected
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-amber-900">
+                    Review Follow-Ups to convert nudges into approved drafts or
+                    schedule actions.
+                  </p>
+                </div>
+              ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       <GmailDetailDialog
         item={selectedItem}
@@ -593,7 +621,7 @@ function GmailDetailDialog({
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-                  <Mail className="size-4" /> Original email
+                  <Mail className="size-4" /> Source message
                 </div>
                 <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">
                   {item.bodyPreview ?? item.snippet ?? "No preview captured."}
@@ -614,7 +642,7 @@ function GmailDetailDialog({
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
-                    <Sparkles className="size-4" /> AI workflow card
+                    <Sparkles className="size-4" /> AI decision card
                   </div>
                   <p className="mt-2 text-sm leading-6 text-emerald-950">
                     {item.summary ?? item.changeSummary ?? "No AI card yet."}
@@ -761,11 +789,107 @@ function CalendarAction({ action }: { action: SuggestedCalendarAction }) {
   );
 }
 
-function MetricPill({ label, value }: { label: string; value: number }) {
+function MiniSignal({ label, value }: { label: string; value: number }) {
   return (
-    <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-emerald-900 shadow-sm">
-      {value} {label}
-    </span>
+    <div className="rounded-xl bg-white p-3 shadow-sm shadow-slate-900/[0.03]">
+      <p className="text-2xl font-black tracking-tight text-slate-950">
+        {value}
+      </p>
+      <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function ConversationCard({
+  card,
+  isAnalyzing,
+  onReview,
+  onAnalyze,
+}: {
+  card: DecisionCard;
+  isAnalyzing: boolean;
+  onReview: () => void;
+  onAnalyze: () => void;
+}) {
+  const needsAi = !card.item.suggestedReply;
+  return (
+    <article className="group rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.03] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-900/5">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-slate-950">
+              {card.sender}
+            </p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              {card.company}
+            </p>
+          </div>
+          <Badge className={categoryClass(card.category)}>
+            {card.category}
+          </Badge>
+        </div>
+
+        <div>
+          <h3 className="line-clamp-2 text-xl font-black tracking-tight text-slate-950">
+            {card.item.subject}
+          </h3>
+          <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
+            {card.aiInsight}
+          </p>
+        </div>
+
+        <div className="grid gap-3 rounded-2xl border border-slate-100 bg-[#f6f7f9] p-3 sm:grid-cols-3">
+          <CardSignal label="Waiting" value={card.waitingTime} />
+          <CardSignal label="Action" value={card.recommendedAction} />
+          <CardSignal label="Confidence" value={`${card.confidence}%`} />
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Button
+            type="button"
+            onClick={needsAi ? onAnalyze : onReview}
+            disabled={isAnalyzing}
+            className="rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+          >
+            {isAnalyzing ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : needsAi ? (
+              <Bot className="mr-2 size-4" />
+            ) : (
+              <ArrowIcon />
+            )}
+            {needsAi ? "Generate AI" : card.cta}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onReview}
+            className="rounded-xl text-slate-600 hover:text-slate-950"
+          >
+            Open detail
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ArrowIcon() {
+  return <CheckCircle2 className="mr-2 size-4" />;
+}
+
+function CardSignal({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-black text-slate-800">
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -799,21 +923,142 @@ function PriorityBadge({ label }: { label: string }) {
   );
 }
 
-function formatEmailList(values: string[]) {
-  return values.length ? values.join(", ") : "Not captured";
+function toDecisionCard(item: GmailItem): DecisionCard {
+  const category = getDecisionCategory(item);
+  return {
+    item,
+    sender: getSenderName(item.fromEmail),
+    company: getCompanyName(item.fromEmail),
+    category,
+    waitingTime: formatWaitingTime(item.receivedAt),
+    aiInsight:
+      item.summary ??
+      item.changeSummary ??
+      item.snippet ??
+      item.bodyPreview ??
+      "TriageOS needs an AI pass to understand the decision.",
+    recommendedAction: formatRecommendedAction(item.recommendedAction),
+    confidence: item.autopilotScore
+      ? Math.round(item.autopilotScore.confidence * 100)
+      : item.suggestedReply
+        ? 76
+        : Math.max(35, Math.min(72, item.priorityScore * 8)),
+    cta: getCardCta(item),
+  };
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown date";
+function getDecisionCategory(item: GmailItem): DecisionCategory {
+  if (item.priorityLabel === "urgent") return "Urgent";
+  if (item.workflowType === "meeting_request") return "Meeting Requests";
+  if (item.workflowType === "follow_up") return "Follow-Ups";
+  if (item.workflowType === "needs_reply") return "Needs Reply";
+  if (item.recommendedAction === "draft_reply") return "Needs Reply";
+  if (item.recommendedAction === "schedule_and_reply") {
+    return "Meeting Requests";
+  }
+  if (item.status === "completed" || item.recommendedAction === "mark_done") {
+    return "Waiting On Others";
+  }
+  return "FYI";
+}
 
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "UTC",
-  }).format(date);
+function getCardCta(item: GmailItem): DecisionCard["cta"] {
+  if (item.status === "completed") return "Mark Resolved";
+  if (item.workflowType === "meeting_request") return "Schedule";
+  if (item.recommendedAction === "schedule_and_reply") return "Schedule";
+  if (item.recommendedAction === "draft_reply" || item.suggestedReply) {
+    return "Draft Reply";
+  }
+  return "Review";
+}
+
+function buildInboxNarrative(input: {
+  attentionCount: number;
+  urgent: number;
+  meetingAsks: number;
+  followUps: number;
+  waiting: number;
+}) {
+  if (input.attentionCount === 0) {
+    return "No conversations require immediate attention. Sync when you want fresh context.";
+  }
+
+  const fragments = [
+    `${input.attentionCount} conversation${input.attentionCount === 1 ? "" : "s"} require attention`,
+  ];
+  if (input.urgent) {
+    fragments.push(
+      `${input.urgent} urgent decision${input.urgent === 1 ? "" : "s"}`,
+    );
+  }
+  if (input.meetingAsks) {
+    fragments.push(
+      `${input.meetingAsks} meeting${input.meetingAsks === 1 ? "" : "s"} need preparation`,
+    );
+  }
+  if (input.followUps) {
+    fragments.push(
+      `${input.followUps} follow-up${input.followUps === 1 ? "" : "s"} may unblock a decision`,
+    );
+  }
+  if (input.waiting) {
+    fragments.push(
+      `${input.waiting} item${input.waiting === 1 ? " is" : "s are"} waiting on others`,
+    );
+  }
+
+  return `Today, ${fragments.join(", ")}.`;
+}
+
+function categoryClass(category: DecisionCategory) {
+  const base = "rounded-lg";
+  if (category === "Urgent") return `${base} bg-red-100 text-red-800`;
+  if (category === "Meeting Requests") {
+    return `${base} bg-blue-100 text-blue-800`;
+  }
+  if (category === "Follow-Ups") return `${base} bg-amber-100 text-amber-800`;
+  if (category === "Waiting On Others") {
+    return `${base} bg-purple-100 text-purple-800`;
+  }
+  if (category === "FYI") return `${base} bg-slate-100 text-slate-700`;
+  return `${base} bg-emerald-100 text-emerald-800`;
+}
+
+function getSenderName(value: string) {
+  const name = value.match(/^([^<]+)</)?.[1]?.trim();
+  if (name) return name.replace(/^"|"$/g, "");
+  return extractEmailAddress(value).split("@")[0] ?? "Unknown sender";
+}
+
+function getCompanyName(value: string) {
+  const domain = extractEmailAddress(value).split("@")[1];
+  if (!domain) return "Unknown company";
+  const company = domain.split(".")[0] ?? domain;
+  return company.charAt(0).toUpperCase() + company.slice(1);
+}
+
+function extractEmailAddress(value: string) {
+  return (value.match(/<([^>]+)>/)?.[1] ?? value).trim().toLowerCase();
+}
+
+function formatRecommendedAction(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatWaitingTime(value: string) {
+  const received = new Date(value).getTime();
+  if (!Number.isFinite(received)) return "Unknown";
+  const diffHours = Math.max(0, Math.round((Date.now() - received) / 3_600_000));
+  if (diffHours < 1) return "Now";
+  if (diffHours < 24) return `${diffHours}h`;
+  const days = Math.round(diffHours / 24);
+  return `${days}d`;
+}
+
+function formatEmailList(values: string[]) {
+  return values.length ? values.join(", ") : "Not captured";
 }
 
 function formatDateTime(value: string) {

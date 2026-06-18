@@ -48,7 +48,7 @@ export default async function ActivityPage() {
           {logs.length === 0 ? (
             <Card className="rounded-[1.75rem] border-dashed bg-white/70">
               <CardContent className="p-10 text-center text-slate-600">
-                No actions yet. Execute your first workflow from the dashboard.
+                No actions yet. Approve your first action from Work Queue.
               </CardContent>
             </Card>
           ) : (
