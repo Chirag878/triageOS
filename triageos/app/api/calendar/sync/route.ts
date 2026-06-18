@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const input = syncCalendarSchema.parse(body);
     const connection = await getOrCreateCorsairConnection(profile.id);
 
-    const events = await fetchUpcomingCalendarEvents({
+    const { events, operationPath } = await fetchUpcomingCalendarEvents({
       tenantId: connection.corsairAccountId,
       maxResults: input.maxResults,
     });
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       })
       .where(eq(corsairConnections.userId, profile.id));
 
-    return NextResponse.json({ events, count: events.length });
+    return NextResponse.json({ events, count: events.length, operationPath });
   } catch (error) {
     const message =
       error instanceof Error

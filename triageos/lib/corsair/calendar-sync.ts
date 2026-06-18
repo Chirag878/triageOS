@@ -15,36 +15,90 @@ export type CorsairCalendarEvent = {
   attendees: string[];
 };
 
-const CALENDAR_LIST_EVENTS_PATH = "googlecalendar.api.events.list";
+const CALENDAR_LIST_EVENT_OPERATIONS = [
+  "googlecalendar.api.events.list",
+  "googlecalendar.events.list",
+  "googlecalendar.api.calendar.events.list",
+  "googlecalendar.api.calendars.events.list",
+] as const;
 
 export async function fetchUpcomingCalendarEvents(input: {
   tenantId: string;
   maxResults?: number;
 }) {
   const maxResults = Math.min(Math.max(input.maxResults ?? 10, 1), 25);
+  const errors: string[] = [];
+
+  for (const path of CALENDAR_LIST_EVENT_OPERATIONS) {
+    try {
+      const events = await fetchUpcomingCalendarEventsWithPath({
+        tenantId: input.tenantId,
+        maxResults,
+        path,
+      });
+
+      return { events, operationPath: path };
+    } catch (error) {
+      errors.push(
+        `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  throw new Error(
+    [
+      "Unable to sync Google Calendar through Corsair.",
+      "Tried supported Calendar list operation paths but all failed.",
+      "Make sure Google Calendar is connected in Corsair and the Calendar plugin exposes an events.list operation.",
+      `Details: ${errors.join(" | ")}`,
+    ].join(" "),
+  );
+}
+
+async function fetchUpcomingCalendarEventsWithPath(input: {
+  tenantId: string;
+  maxResults: number;
+  path: string;
+}) {
   const corsair = createCorsairClient();
   const payload = unwrapCorsairPayload(
     await corsair.run({
       tenantId: input.tenantId,
-      path: CALENDAR_LIST_EVENTS_PATH,
-      payload: {
-        calendarId: "primary",
-        maxResults,
-        singleEvents: true,
-        orderBy: "startTime",
-        timeMin: new Date().toISOString(),
-      },
+      path: input.path,
+      payload: buildListEventsPayload(input.maxResults),
     }),
   );
 
   return extractEventArray(payload)
     .map(normalizeCalendarEvent)
     .filter((event): event is CorsairCalendarEvent => Boolean(event))
-    .slice(0, maxResults);
+    .slice(0, input.maxResults);
+}
+
+function buildListEventsPayload(maxResults: number) {
+  const timeMin = new Date().toISOString();
+
+  return {
+    calendarId: "primary",
+    calendar_id: "primary",
+    maxResults,
+    max_results: maxResults,
+    singleEvents: true,
+    single_events: true,
+    orderBy: "startTime",
+    order_by: "startTime",
+    timeMin,
+    time_min: timeMin,
+  };
 }
 
 function extractEventArray(payload: JsonRecord) {
-  const candidates = [payload.items, payload.events, payload.data];
+  const candidates = [
+    payload.items,
+    payload.events,
+    payload.data,
+    payload.value,
+  ];
 
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) return candidate.filter(isJsonRecord);
