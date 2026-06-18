@@ -18,6 +18,7 @@ const calendarActionSchema = z.object({
 const executeSchema = z.object({
   triageItemId: z.string().uuid(),
   draftReply: z.boolean().default(true),
+  sendEmail: z.boolean().default(false),
   createEvent: z.boolean().default(true),
   confirmed: z.literal(true),
   suggestedReplyOverride: z.string().trim().nullable().optional(),
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
       userId: profile.id,
       triageItemId: input.triageItemId,
       draftReply: input.draftReply,
+      sendEmail: input.sendEmail,
       createEvent: input.createEvent,
       suggestedReplyOverride: input.suggestedReplyOverride,
       calendarActionOverride: input.calendarActionOverride,
@@ -40,6 +42,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
+    console.error("[api.execute] workflow execution failed", error);
+    if (error instanceof z.ZodError) {
+      return apiErrorResponse(
+        error,
+        "Invalid execution request.",
+        400,
+      );
+    }
+
     return apiErrorResponse(error, "Failed to execute workflow.");
   }
 }

@@ -26,6 +26,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +80,8 @@ type ApiResponse = {
   imported?: number;
   error?: string;
 };
+
+type ReplyExecutionMode = "draft" | "send" | "bundle";
 
 type FollowUpCandidate = {
   subject: string;
@@ -299,12 +302,19 @@ export function GmailDashboard({
     }
   };
 
-  const executeActionBundle = (triageItemId: string) => {
-    if (
-      !window.confirm(
-        "Create the Gmail draft and Calendar event in this action bundle?",
-      )
-    ) {
+  const executeReplyAction = (
+    triageItemId: string,
+    mode: ReplyExecutionMode,
+    suggestedReplyOverride?: string,
+  ) => {
+    const confirmation =
+      mode === "send"
+        ? "Send this reviewed reply from Gmail?"
+        : mode === "bundle"
+          ? "Create the Gmail draft and Calendar event in this action bundle?"
+          : "Save this reviewed reply as a Gmail draft?";
+
+    if (!window.confirm(confirmation)) {
       return;
     }
 
@@ -318,9 +328,11 @@ export function GmailDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           triageItemId,
-          draftReply: true,
-          createEvent: true,
+          draftReply: mode === "draft" || mode === "bundle",
+          sendEmail: mode === "send",
+          createEvent: mode === "bundle",
           confirmed: true,
+          suggestedReplyOverride,
         }),
       });
       const payload = (await response.json()) as ApiResponse;
@@ -339,7 +351,11 @@ export function GmailDashboard({
       );
       setSelectedItemId(payload.item.id);
       setMessage(
-        "Action bundle approved: TriageOS created the draft and calendar event through Corsair.",
+        mode === "send"
+          ? "Reply sent from Gmail after your approval."
+          : mode === "bundle"
+            ? "Action bundle approved: TriageOS created the draft and calendar event through Corsair."
+            : "Draft saved in Gmail after your review.",
       );
     });
   };
@@ -568,8 +584,10 @@ export function GmailDashboard({
         onAnalyze={() => {
           if (selectedItem) analyzeItem(selectedItem.id);
         }}
-        onExecute={() => {
-          if (selectedItem) executeActionBundle(selectedItem.id);
+        onExecute={(mode, draftText) => {
+          if (selectedItem) {
+            executeReplyAction(selectedItem.id, mode, draftText);
+          }
         }}
         onOpenChange={(open) => {
           if (!open) setSelectedItemId(null);
@@ -591,7 +609,7 @@ function GmailDetailDialog({
   isAnalyzing: boolean;
   isExecuting: boolean;
   onAnalyze: () => void;
-  onExecute: () => void;
+  onExecute: (mode: ReplyExecutionMode, draftText: string) => void;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
@@ -682,38 +700,21 @@ function GmailDetailDialog({
                         creates drafts/events only after approval.
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      onClick={onExecute}
-                      disabled={
-                        isExecuting ||
-                        isAnalyzing ||
-                        item.status === "completed" ||
-                        !item.suggestedReply
-                      }
-                      className="rounded-full bg-emerald-400 text-slate-950 hover:bg-emerald-300"
-                    >
-                      {isExecuting ? (
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="mr-2 size-4" />
-                      )}
-                      {item.status === "completed"
-                        ? "Bundle completed"
-                        : "Approve bundle"}
-                    </Button>
+                    <p className="text-xs font-semibold text-slate-400">
+                      Save or send from the editable reply below.
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-                      <MailCheck className="size-4" /> Draft in bundle
-                    </div>
-                    <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                      {item.suggestedReply ?? "No reply suggested."}
-                    </p>
-                  </div>
+                  <ReplyReviewPanel
+                    key={`${item.id}-${item.suggestedReply ?? ""}`}
+                    item={item}
+                    isAnalyzing={isAnalyzing}
+                    isExecuting={isExecuting}
+                    onAnalyze={onAnalyze}
+                    onExecute={onExecute}
+                  />
 
                   <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
                     <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
@@ -766,6 +767,102 @@ function GmailDetailDialog({
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReplyReviewPanel({
+  item,
+  isAnalyzing,
+  isExecuting,
+  onAnalyze,
+  onExecute,
+}: {
+  item: GmailItem;
+  isAnalyzing: boolean;
+  isExecuting: boolean;
+  onAnalyze: () => void;
+  onExecute: (mode: ReplyExecutionMode, draftText: string) => void;
+}) {
+  const [draftText, setDraftText] = useState(item.suggestedReply ?? "");
+  const isDraftEdited = draftText !== (item.suggestedReply ?? "");
+  const canExecuteReply = Boolean(draftText.trim()) && !isAnalyzing;
+  const isCompleted = item.status === "completed";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+          <MailCheck className="size-4" /> Editable reply
+        </div>
+        {item.suggestedReply ? (
+          <Badge variant="outline" className="w-fit rounded-full bg-slate-50">
+            {isDraftEdited ? "Edited by you" : "AI version"}
+          </Badge>
+        ) : null}
+      </div>
+
+      {item.suggestedReply ? (
+        <>
+          <Textarea
+            value={draftText}
+            onChange={(event) => setDraftText(event.target.value)}
+            className="mt-4 min-h-56 resize-y rounded-2xl border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-800"
+            placeholder="Review and edit the AI reply before saving or sending."
+          />
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <Button
+              type="button"
+              onClick={onAnalyze}
+              disabled={isAnalyzing || isExecuting}
+              variant="outline"
+              className="rounded-full bg-white"
+            >
+              {isAnalyzing ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Bot className="mr-2 size-4" />
+              )}
+              Regenerate
+            </Button>
+            <Button
+              type="button"
+              onClick={() => onExecute("draft", draftText)}
+              disabled={isExecuting || isCompleted || !canExecuteReply}
+              className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
+            >
+              {isExecuting ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <MailCheck className="mr-2 size-4" />
+              )}
+              Save Draft
+            </Button>
+            <Button
+              type="button"
+              onClick={() => onExecute("send", draftText)}
+              disabled={isExecuting || isCompleted || !canExecuteReply}
+              variant="outline"
+              className="rounded-full bg-white"
+            >
+              Send Email
+            </Button>
+            <Button
+              type="button"
+              onClick={() => onExecute("bundle", draftText)}
+              disabled={isExecuting || isCompleted || !canExecuteReply}
+              variant="outline"
+              className="rounded-full bg-white"
+            >
+              Approve Bundle
+            </Button>
+          </div>
+        </>
+      ) : (
+        <p className="mt-4 text-sm leading-7 text-slate-600">
+          No reply suggested yet. Generate AI to create a reviewable reply.
+        </p>
+      )}
+    </div>
   );
 }
 

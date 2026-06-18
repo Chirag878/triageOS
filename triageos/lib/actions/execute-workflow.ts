@@ -7,7 +7,10 @@ import {
   saveCalendarEvent,
 } from "@/lib/calendar/events";
 import { createCalendarEvent } from "@/lib/corsair/calendar";
-import { createGmailDraftReply } from "@/lib/corsair/gmail-actions";
+import {
+  createGmailDraftReply,
+  sendGmailReply,
+} from "@/lib/corsair/gmail-actions";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
 
 type JsonRecord = Record<string, unknown>;
@@ -26,6 +29,7 @@ export async function executeTriageWorkflow(input: {
   userId: string;
   triageItemId: string;
   draftReply: boolean;
+  sendEmail?: boolean;
   createEvent: boolean;
   suggestedReplyOverride?: string | null;
   calendarActionOverride?: SuggestedCalendarAction | null;
@@ -58,7 +62,8 @@ export async function executeTriageWorkflow(input: {
   if (
     item.status === "completed" &&
     (!input.createEvent || item.createdCalendarEventId) &&
-    (!input.draftReply || item.draftEmailMessageId)
+    (!input.draftReply || item.draftEmailMessageId) &&
+    !input.sendEmail
   ) {
     return { item, results: existingResults, idempotent: true };
   }
@@ -68,9 +73,9 @@ export async function executeTriageWorkflow(input: {
     input.calendarActionOverride ??
     (item.suggestedCalendarAction as SuggestedCalendarAction | null);
 
-  if (!replyBody && input.draftReply) {
+  if (!replyBody && (input.draftReply || input.sendEmail)) {
     throw new Error(
-      "Generate or write an AI suggested reply before creating a draft.",
+      "Generate or write an AI suggested reply before saving or sending.",
     );
   }
 
@@ -155,6 +160,36 @@ export async function executeTriageWorkflow(input: {
       });
     }
 
+    if (input.sendEmail && replyBody) {
+      const to = extractEmail(item.fromEmail);
+      const payload = {
+        to,
+        subject: item.subject,
+        body: replyBody,
+        threadId: item.externalThreadId,
+      };
+      await createActionLog({
+        userId: input.userId,
+        triageItemId: item.id,
+        actionType: "send_email_reply",
+        payload,
+        status: "running",
+      });
+      const sendResult = await sendGmailReply({
+        tenantId: connection.corsairAccountId,
+        ...payload,
+      });
+      results.sentEmail = sendResult;
+      await createActionLog({
+        userId: input.userId,
+        triageItemId: item.id,
+        actionType: "send_email_reply",
+        payload,
+        status: "succeeded",
+        result: sendResult,
+      });
+    }
+
     const reviewedUpdates: Partial<typeof triageItems.$inferInsert> = {};
     if (input.suggestedReplyOverride !== undefined) {
       reviewedUpdates.suggestedReply = replyBody ?? null;
@@ -179,6 +214,15 @@ export async function executeTriageWorkflow(input: {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Workflow execution failed.";
+    console.error("[execute.workflow] failed", {
+      triageItemId: item.id,
+      userId: input.userId,
+      draftReply: input.draftReply,
+      sendEmail: Boolean(input.sendEmail),
+      createEvent: input.createEvent,
+      message,
+      error,
+    });
     const [failed] = await db
       .update(triageItems)
       .set({ status: "failed", errorMessage: message, updatedAt: new Date() })
@@ -214,7 +258,10 @@ function normalizeCalendarAction(
 async function createActionLog(input: {
   userId: string;
   triageItemId: string;
-  actionType: "create_calendar_event" | "draft_email_reply";
+  actionType:
+    | "create_calendar_event"
+    | "draft_email_reply"
+    | "send_email_reply";
   payload: JsonRecord;
   status: "running" | "succeeded" | "failed";
   result?: unknown;

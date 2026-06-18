@@ -10,31 +10,57 @@ export type GmailDraftReplyInput = {
 };
 
 const GMAIL_CREATE_DRAFT_PATH = "gmail.api.drafts.create";
+const GMAIL_SEND_MESSAGE_PATH = "gmail.api.messages.send";
 
 export async function createGmailDraftReply(input: GmailDraftReplyInput) {
   const corsair = createCorsairClient();
-  const raw = buildRawEmail({
-    to: input.to,
-    subject: input.subject.startsWith("Re:")
-      ? input.subject
-      : `Re: ${input.subject}`,
-    body: input.body,
-  });
 
   return unwrapCorsairPayload(
     await corsair.run({
       tenantId: input.tenantId,
       path: GMAIL_CREATE_DRAFT_PATH,
-      payload: {
-        requestBody: {
-          message: {
-            raw,
-            threadId: input.threadId ?? undefined,
-          },
-        },
-      },
+      payload: buildDraftPayload(input),
     }),
   );
+}
+
+export async function sendGmailReply(input: GmailDraftReplyInput) {
+  const corsair = createCorsairClient();
+
+  return unwrapCorsairPayload(
+    await corsair.run({
+      tenantId: input.tenantId,
+      path: GMAIL_SEND_MESSAGE_PATH,
+      payload: buildSendPayload(input),
+    }),
+  );
+}
+
+function buildDraftPayload(input: GmailDraftReplyInput) {
+  return {
+    requestBody: {
+      message: buildGmailMessage(input),
+    },
+  };
+}
+
+function buildSendPayload(input: GmailDraftReplyInput) {
+  return {
+    requestBody: buildGmailMessage(input),
+  };
+}
+
+function buildGmailMessage(input: GmailDraftReplyInput) {
+  return {
+    raw: buildRawEmail({
+      to: input.to,
+      subject: input.subject.startsWith("Re:")
+        ? input.subject
+        : `Re: ${input.subject}`,
+      body: input.body,
+    }),
+    threadId: input.threadId ?? undefined,
+  };
 }
 
 function buildRawEmail(input: { to: string; subject: string; body: string }) {
