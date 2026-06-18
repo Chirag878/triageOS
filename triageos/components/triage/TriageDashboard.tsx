@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   Bot,
@@ -24,6 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 type SuggestedCalendarAction = {
@@ -61,6 +64,11 @@ type TriageItem = {
   status: string;
   intentTimeline: string[];
   memoryHint: string | null;
+};
+
+type ExecutionOverrides = {
+  suggestedReply?: string | null;
+  calendarAction?: SuggestedCalendarAction;
 };
 
 type ApiResponse = {
@@ -189,7 +197,7 @@ export function TriageDashboard({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [items, selectedIndex, selectedItem]);
 
-  function executeItem(triageItemId: string) {
+  function executeItem(triageItemId: string, overrides?: ExecutionOverrides) {
     if (
       !window.confirm(
         "Create the calendar event and Gmail draft for this workflow?",
@@ -211,6 +219,8 @@ export function TriageDashboard({
           draftReply: true,
           createEvent: true,
           confirmed: true,
+          suggestedReplyOverride: overrides?.suggestedReply,
+          calendarActionOverride: overrides?.calendarAction,
         }),
       });
       const payload = (await response.json()) as ApiResponse;
@@ -353,8 +363,8 @@ export function TriageDashboard({
         onAnalyze={() => {
           if (selectedItem) analyzeItem(selectedItem.id);
         }}
-        onExecute={() => {
-          if (selectedItem) executeItem(selectedItem.id);
+        onExecute={(overrides) => {
+          if (selectedItem) executeItem(selectedItem.id, overrides);
         }}
       />
     </div>
@@ -378,17 +388,6 @@ function PlaybookStep({
       <h3 className="mt-2 font-black tracking-tight">{title}</h3>
       <p className="mt-1 text-sm leading-6 text-slate-600">{text}</p>
     </div>
-  );
-}
-
-function ShortcutKey({ label, text }: { label: string; text: string }) {
-  return (
-    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-      <kbd className="mr-1 rounded bg-white px-1.5 py-0.5 text-slate-950 shadow-sm">
-        {label}
-      </kbd>
-      {text}
-    </span>
   );
 }
 
@@ -500,7 +499,7 @@ function WorkflowDetailDialog({
   isExecuting: boolean;
   onOpenChange: (open: boolean) => void;
   onAnalyze: () => void;
-  onExecute: () => void;
+  onExecute: (overrides?: ExecutionOverrides) => void;
 }) {
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
@@ -562,128 +561,13 @@ function WorkflowDetailDialog({
             </section>
 
             {item.suggestedReply ? (
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h3 className="font-black tracking-tight">
-                      Execute workflow
-                    </h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Creates the suggested calendar event when present and
-                      saves a Gmail draft reply. This does not silently send
-                      email.
-                    </p>
-                  </div>
-                  <Button
-                    onClick={onExecute}
-                    disabled={
-                      isExecuting || isAnalyzing || item.status === "completed"
-                    }
-                    className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
-                  >
-                    {isExecuting ? (
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="mr-2 size-4" />
-                    )}
-                    {item.status === "completed"
-                      ? "Completed"
-                      : "Create draft + event"}
-                  </Button>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="font-black tracking-tight">Keyboard shortcuts</h3>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-                <ShortcutKey label="J" text="Next" />
-                <ShortcutKey label="K" text="Previous" />
-                <ShortcutKey label="R" text="Regenerate" />
-                <ShortcutKey label="E" text="Execute" />
-                <ShortcutKey label="Esc" text="Close" />
-              </div>
-            </section>
-
-            {item.autopilotScore ? (
-              <section className="grid gap-3 md:grid-cols-3">
-                <InfoPill
-                  label="Confidence"
-                  value={`${Math.round(item.autopilotScore.confidence * 100)}%`}
-                />
-                <InfoPill
-                  label="Time saved"
-                  value={`${item.autopilotScore.estimatedMinutesSaved} min`}
-                />
-                <InfoPill label="Priority" value={`${item.priorityScore}/10`} />
-              </section>
-            ) : null}
-
-            {item.summary ? (
-              <section>
-                <h3 className="font-black tracking-tight">Summary</h3>
-                <p className="mt-2 text-sm leading-7 text-slate-700">
-                  {item.summary}
-                </p>
-              </section>
-            ) : null}
-
-            {item.suggestedReply ? (
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <h3 className="font-black tracking-tight">Suggested reply</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() =>
-                      navigator.clipboard.writeText(item.suggestedReply ?? "")
-                    }
-                  >
-                    <Copy className="mr-2 size-3.5" /> Copy
-                  </Button>
-                </div>
-                <Textarea
-                  readOnly
-                  value={item.suggestedReply}
-                  className="min-h-32 bg-white"
-                />
-              </section>
-            ) : null}
-
-            {item.suggestedCalendarAction?.type &&
-            item.suggestedCalendarAction.type !== "none" ? (
-              <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <h3 className="font-black tracking-tight text-blue-950">
-                  Suggested calendar action
-                </h3>
-                <dl className="mt-3 grid gap-2 text-sm text-blue-950 md:grid-cols-2">
-                  <DetailRow
-                    label="Title"
-                    value={item.suggestedCalendarAction.title}
-                  />
-                  <DetailRow
-                    label="Start"
-                    value={
-                      item.suggestedCalendarAction.startTime
-                        ? formatDate(item.suggestedCalendarAction.startTime)
-                        : null
-                    }
-                  />
-                  <DetailRow
-                    label="Duration"
-                    value={
-                      item.suggestedCalendarAction.durationMinutes
-                        ? `${item.suggestedCalendarAction.durationMinutes} min`
-                        : null
-                    }
-                  />
-                  <DetailRow
-                    label="Attendees"
-                    value={item.suggestedCalendarAction.attendees.join(", ")}
-                  />
-                </dl>
-              </section>
+              <WorkflowExecutionReview
+                key={item.id}
+                item={item}
+                isAnalyzing={isAnalyzing}
+                isExecuting={isExecuting}
+                onExecute={onExecute}
+              />
             ) : null}
 
             {item.intentTimeline.length > 0 ? (
@@ -708,24 +592,180 @@ function WorkflowDetailDialog({
   );
 }
 
-function InfoPill({ label, value }: { label: string; value: string }) {
+function WorkflowExecutionReview({
+  item,
+  isAnalyzing,
+  isExecuting,
+  onExecute,
+}: {
+  item: TriageItem;
+  isAnalyzing: boolean;
+  isExecuting: boolean;
+  onExecute: (overrides?: ExecutionOverrides) => void;
+}) {
+  const calendarAction = item.suggestedCalendarAction;
+  const [replyDraft, setReplyDraft] = useState(item.suggestedReply ?? "");
+  const [calendarTitle, setCalendarTitle] = useState(
+    calendarAction?.title ?? "",
+  );
+  const [calendarStart, setCalendarStart] = useState(
+    calendarAction?.startTime ?? "",
+  );
+  const [calendarDuration, setCalendarDuration] = useState(
+    calendarAction?.durationMinutes
+      ? String(calendarAction.durationMinutes)
+      : "30",
+  );
+  const [calendarTimezone, setCalendarTimezone] = useState(
+    calendarAction?.timezone ?? "UTC",
+  );
+  const [calendarAttendees, setCalendarAttendees] = useState(
+    calendarAction?.attendees?.join(", ") ?? "",
+  );
+  const [calendarDescription, setCalendarDescription] = useState(
+    calendarAction?.description ?? "",
+  );
+
+  const buildCalendarOverride = (): SuggestedCalendarAction => {
+    if (!calendarAction) return null;
+
+    return {
+      type: calendarAction.type || "none",
+      title: calendarTitle.trim() || null,
+      attendees: calendarAttendees
+        .split(",")
+        .map((attendee) => attendee.trim())
+        .filter(Boolean),
+      startTime: calendarStart.trim() || null,
+      durationMinutes: Number(calendarDuration) || null,
+      timezone: calendarTimezone.trim() || "UTC",
+      description: calendarDescription.trim() || null,
+    };
+  };
+
   return (
-    <div className="rounded-2xl bg-slate-100 p-4">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 text-2xl font-black tracking-tight">{value}</p>
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="font-black tracking-tight">Execute workflow</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Review and edit the reply/calendar fields below, then create a
+              Gmail draft and Calendar event through Corsair.
+            </p>
+          </div>
+          <Button
+            onClick={() =>
+              onExecute({
+                suggestedReply: replyDraft,
+                calendarAction: buildCalendarOverride(),
+              })
+            }
+            disabled={isExecuting || isAnalyzing || item.status === "completed"}
+            className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
+          >
+            {isExecuting ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="mr-2 size-4" />
+            )}
+            {item.status === "completed" ? "Completed" : "Create draft + event"}
+          </Button>
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h3 className="font-black tracking-tight">Suggested reply</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => navigator.clipboard.writeText(replyDraft)}
+          >
+            <Copy className="mr-2 size-3.5" /> Copy
+          </Button>
+        </div>
+        <Textarea
+          value={replyDraft}
+          onChange={(event) => setReplyDraft(event.target.value)}
+          className="min-h-32 bg-white"
+        />
+      </section>
+
+      {calendarAction?.type && calendarAction.type !== "none" ? (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+          <h3 className="font-black tracking-tight text-blue-950">
+            Suggested calendar action
+          </h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <EditableField label="Title">
+              <Input
+                value={calendarTitle}
+                onChange={(event) => setCalendarTitle(event.target.value)}
+                className="rounded-2xl bg-white"
+              />
+            </EditableField>
+            <EditableField label="Start time (ISO)">
+              <Input
+                value={calendarStart}
+                onChange={(event) => setCalendarStart(event.target.value)}
+                className="rounded-2xl bg-white"
+                placeholder="2026-06-18T15:30:00Z"
+              />
+            </EditableField>
+            <EditableField label="Duration minutes">
+              <Input
+                value={calendarDuration}
+                onChange={(event) => setCalendarDuration(event.target.value)}
+                className="rounded-2xl bg-white"
+                inputMode="numeric"
+              />
+            </EditableField>
+            <EditableField label="Timezone">
+              <Input
+                value={calendarTimezone}
+                onChange={(event) => setCalendarTimezone(event.target.value)}
+                className="rounded-2xl bg-white"
+              />
+            </EditableField>
+            <EditableField label="Attendees" className="md:col-span-2">
+              <Input
+                value={calendarAttendees}
+                onChange={(event) => setCalendarAttendees(event.target.value)}
+                className="rounded-2xl bg-white"
+                placeholder="name@example.com, teammate@example.com"
+              />
+            </EditableField>
+            <EditableField label="Description" className="md:col-span-2">
+              <Textarea
+                value={calendarDescription}
+                onChange={(event) => setCalendarDescription(event.target.value)}
+                className="min-h-24 rounded-2xl bg-white"
+              />
+            </EditableField>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value?: string | null }) {
+function EditableField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div>
-      <dt className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">
+    <div className={className}>
+      <Label className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">
         {label}
-      </dt>
-      <dd className="mt-1">{value || "—"}</dd>
+      </Label>
+      <div className="mt-2">{children}</div>
     </div>
   );
 }

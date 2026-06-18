@@ -23,6 +23,8 @@ export async function executeTriageWorkflow(input: {
   triageItemId: string;
   draftReply: boolean;
   createEvent: boolean;
+  suggestedReplyOverride?: string | null;
+  calendarActionOverride?: SuggestedCalendarAction | null;
 }) {
   const [item] = await db
     .select()
@@ -34,8 +36,15 @@ export async function executeTriageWorkflow(input: {
     throw new Error("Triage item not found.");
   }
 
-  if (!item.suggestedReply && input.draftReply) {
-    throw new Error("Generate an AI suggested reply before creating a draft.");
+  const replyBody = input.suggestedReplyOverride?.trim() || item.suggestedReply;
+  const calendarAction =
+    input.calendarActionOverride ??
+    (item.suggestedCalendarAction as SuggestedCalendarAction | null);
+
+  if (!replyBody && input.draftReply) {
+    throw new Error(
+      "Generate or write an AI suggested reply before creating a draft.",
+    );
   }
 
   const connection = await getOrCreateCorsairConnection(input.userId);
@@ -49,9 +58,6 @@ export async function executeTriageWorkflow(input: {
 
   try {
     if (input.createEvent) {
-      const calendarAction =
-        item.suggestedCalendarAction as SuggestedCalendarAction | null;
-
       if (calendarAction?.type && calendarAction.type !== "none") {
         const payload = normalizeCalendarAction(calendarAction, item.fromEmail);
         await createActionLog({
@@ -78,12 +84,12 @@ export async function executeTriageWorkflow(input: {
       }
     }
 
-    if (input.draftReply && item.suggestedReply) {
+    if (input.draftReply && replyBody) {
       const to = extractEmail(item.fromEmail);
       const payload = {
         to,
         subject: item.subject,
-        body: item.suggestedReply,
+        body: replyBody,
         threadId: item.externalThreadId,
       };
       await createActionLog({
@@ -109,10 +115,19 @@ export async function executeTriageWorkflow(input: {
       });
     }
 
+    const reviewedUpdates: Partial<typeof triageItems.$inferInsert> = {};
+    if (input.suggestedReplyOverride !== undefined) {
+      reviewedUpdates.suggestedReply = replyBody ?? null;
+    }
+    if (input.calendarActionOverride !== undefined) {
+      reviewedUpdates.suggestedCalendarAction = calendarAction as JsonRecord;
+    }
+
     const [updated] = await db
       .update(triageItems)
       .set({
         ...updates,
+        ...reviewedUpdates,
         status: "completed",
         executedAt: new Date(),
         updatedAt: new Date(),
