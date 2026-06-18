@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Inbox, Loader2, MailCheck, RefreshCw } from "lucide-react";
+import { Inbox, Loader2, MailCheck, PlugZap, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,14 +19,36 @@ type GmailItem = {
 type ApiResponse = { items?: GmailItem[]; imported?: number; error?: string };
 
 export function GmailDashboard({
+  initialConnected,
   initialItems,
 }: {
+  initialConnected: boolean;
   initialItems: GmailItem[];
 }) {
+  const [isConnected] = useState(initialConnected);
   const [items, setItems] = useState(initialItems);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const connectCorsair = () => {
+    startTransition(async () => {
+      setError(null);
+      setMessage(null);
+      const response = await fetch("/api/corsair/connect", { method: "POST" });
+      const payload = (await response.json()) as {
+        url?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.url) {
+        setError(payload.error ?? "Unable to create Corsair connect link.");
+        return;
+      }
+
+      window.location.href = payload.url;
+    });
+  };
 
   const syncGmail = () => {
     startTransition(async () => {
@@ -67,16 +89,18 @@ export function GmailDashboard({
           </p>
         </div>
         <Button
-          onClick={syncGmail}
+          onClick={isConnected ? syncGmail : connectCorsair}
           disabled={isPending}
           className="rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
         >
           {isPending ? (
             <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
+          ) : isConnected ? (
             <RefreshCw className="mr-2 size-4" />
+          ) : (
+            <PlugZap className="mr-2 size-4" />
           )}
-          Sync Gmail
+          {isConnected ? "Sync Gmail" : "Connect Gmail"}
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -90,7 +114,25 @@ export function GmailDashboard({
             {message}
           </div>
         ) : null}
-        {items.length === 0 ? (
+        {!isConnected ? (
+          <div className="rounded-[1.5rem] border border-dashed border-emerald-300 bg-emerald-50 p-10 text-center">
+            <PlugZap className="mx-auto size-10 text-emerald-700" />
+            <h3 className="mt-4 text-xl font-black tracking-tight">
+              Connect Gmail to start syncing
+            </h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+              Corsair handles OAuth. Once Gmail is connected, this page will
+              show the Sync Gmail action instead.
+            </p>
+            <Button
+              onClick={connectCorsair}
+              disabled={isPending}
+              className="mt-5 rounded-full bg-emerald-700 text-white hover:bg-emerald-600"
+            >
+              <PlugZap className="mr-2 size-4" /> Connect Gmail + Calendar
+            </Button>
+          </div>
+        ) : items.length === 0 ? (
           <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
             <Inbox className="mx-auto size-10 text-slate-400" />
             <h3 className="mt-4 text-xl font-black tracking-tight">

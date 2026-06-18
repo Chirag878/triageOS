@@ -10,6 +10,7 @@ import {
   Clock3,
   Loader2,
   Pencil,
+  PlugZap,
   Plus,
   RefreshCw,
   Sparkles,
@@ -66,7 +67,12 @@ type CalendarDay = {
   events: CalendarEvent[];
 };
 
-export function CalendarDashboard() {
+export function CalendarDashboard({
+  initialConnected,
+}: {
+  initialConnected: boolean;
+}) {
+  const [isConnected] = useState(initialConnected);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +118,25 @@ export function CalendarDashboard() {
       )[0],
     [calendarModel.days],
   );
+
+  const connectCorsair = () => {
+    startTransition(async () => {
+      setError(null);
+      setMessage(null);
+      const response = await fetch("/api/corsair/connect", { method: "POST" });
+      const payload = (await response.json()) as {
+        url?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.url) {
+        setError(payload.error ?? "Unable to create Corsair connect link.");
+        return;
+      }
+
+      window.location.href = payload.url;
+    });
+  };
 
   const syncCalendar = () => {
     startTransition(async () => {
@@ -294,30 +319,36 @@ export function CalendarDashboard() {
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
+              {isConnected ? (
+                <Button
+                  onClick={openNewEventDialog}
+                  className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
+                >
+                  <Plus className="mr-2 size-4" /> Add event
+                </Button>
+              ) : null}
+              {isConnected ? (
+                <Button
+                  onClick={createCalendarSummary}
+                  variant="outline"
+                  className="rounded-full border-blue-200 bg-white/80"
+                >
+                  <Sparkles className="mr-2 size-4" /> Get summary
+                </Button>
+              ) : null}
               <Button
-                onClick={openNewEventDialog}
-                className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
-              >
-                <Plus className="mr-2 size-4" /> Add event
-              </Button>
-              <Button
-                onClick={createCalendarSummary}
-                variant="outline"
-                className="rounded-full border-blue-200 bg-white/80"
-              >
-                <Sparkles className="mr-2 size-4" /> Get summary
-              </Button>
-              <Button
-                onClick={syncCalendar}
+                onClick={isConnected ? syncCalendar : connectCorsair}
                 disabled={isPending}
                 className="rounded-full bg-blue-700 text-white hover:bg-blue-600"
               >
                 {isPending ? (
                   <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : (
+                ) : isConnected ? (
                   <RefreshCw className="mr-2 size-4" />
+                ) : (
+                  <PlugZap className="mr-2 size-4" />
                 )}
-                Sync Calendar
+                {isConnected ? "Sync Calendar" : "Connect Calendar"}
               </Button>
             </div>
           </div>
@@ -342,156 +373,177 @@ export function CalendarDashboard() {
             </div>
           ) : null}
 
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-3 shadow-inner md:p-5">
-              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-700">
-                    Month view
-                  </p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full bg-white"
-                      onClick={() => moveMonth(-1)}
-                    >
-                      <ChevronLeft className="size-4" />
-                    </Button>
-                    <h2 className="text-2xl font-black tracking-tight text-slate-950">
-                      {calendarModel.monthLabel}
-                    </h2>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full bg-white"
-                      onClick={() => moveMonth(1)}
-                    >
-                      <ChevronRight className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-                  <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
-                    {sortedEvents.length} events
-                  </span>
-                  <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
-                    {countAttendees(sortedEvents)} attendees
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-7 gap-2 text-center text-xs font-black uppercase tracking-[0.16em] text-slate-400">
-                {WEEKDAYS.map((weekday) => (
-                  <div key={weekday} className="py-2">
-                    {weekday}
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-2">
-                {calendarModel.days.map((day) => (
-                  <button
-                    key={day.key}
-                    onClick={() => setSelectedDateKey(day.key)}
-                    className={`min-h-24 rounded-2xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
-                      selectedDay?.key === day.key
-                        ? "border-blue-400 bg-blue-50 shadow-md shadow-blue-900/5"
-                        : day.isCurrentMonth
-                          ? "border-white bg-white"
-                          : "border-slate-100 bg-white/50 text-slate-400"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-black">{day.label}</span>
-                      {day.events.length ? (
-                        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">
-                          {day.events.length}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {day.events.slice(0, 2).map((event) => (
-                        <div
-                          key={event.id}
-                          className="truncate rounded-lg bg-blue-100 px-2 py-1 text-[11px] font-bold text-blue-900"
-                        >
-                          {formatTime(event.startTime)} · {event.title}
-                        </div>
-                      ))}
-                      {day.events.length > 2 ? (
-                        <div className="px-2 text-[11px] font-bold text-slate-500">
-                          +{day.events.length - 2} more
-                        </div>
-                      ) : null}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <aside className="space-y-4 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
-                    Day summary
-                  </p>
-                  <h3 className="mt-1 text-xl font-black tracking-tight">
-                    {selectedDay
-                      ? formatDayHeading(selectedDay.date)
-                      : "No day selected"}
-                  </h3>
-                </div>
-                <CalendarCheck2 className="size-8 text-blue-600" />
-              </div>
-
-              {selectedDay?.events.length ? (
-                <div className="space-y-3">
-                  {selectedDay.events.map((event) => (
-                    <article
-                      key={event.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <h4 className="font-black tracking-tight">
-                        {event.title}
-                      </h4>
-                      <p className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-                        <Clock3 className="size-4" />{" "}
-                        {formatTime(event.startTime)} →{" "}
-                        {formatTime(event.endTime)}
-                      </p>
-                      <p className="mt-2 flex items-start gap-2 text-sm leading-6 text-slate-600">
-                        <Users className="mt-1 size-4 shrink-0" />
-                        {event.attendees.length
-                          ? event.attendees.join(", ")
-                          : "No attendees"}
-                      </p>
+          {!isConnected ? (
+            <section className="rounded-[1.75rem] border border-dashed border-blue-300 bg-blue-50 p-10 text-center">
+              <PlugZap className="mx-auto size-10 text-blue-700" />
+              <h3 className="mt-4 text-2xl font-black tracking-tight">
+                Connect Google Calendar to unlock the calendar cockpit
+              </h3>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                Once Corsair confirms Calendar access, this page will show the
+                month grid, day summary, event creation, reminders, and sync
+                actions.
+              </p>
+              <Button
+                onClick={connectCorsair}
+                disabled={isPending}
+                className="mt-5 rounded-full bg-blue-700 text-white hover:bg-blue-600"
+              >
+                <PlugZap className="mr-2 size-4" /> Connect Gmail + Calendar
+              </Button>
+            </section>
+          ) : (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-3 shadow-inner md:p-5">
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-700">
+                      Month view
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
-                        className="mt-3 rounded-full bg-white"
-                        onClick={() => openEditEventDialog(event)}
+                        size="icon"
+                        className="size-9 rounded-full bg-white"
+                        onClick={() => moveMonth(-1)}
                       >
-                        <Pencil className="mr-2 size-3.5" /> Edit
+                        <ChevronLeft className="size-4" />
                       </Button>
-                    </article>
+                      <h2 className="text-2xl font-black tracking-tight text-slate-950">
+                        {calendarModel.monthLabel}
+                      </h2>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-9 rounded-full bg-white"
+                        onClick={() => moveMonth(1)}
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+                    <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+                      {sortedEvents.length} events
+                    </span>
+                    <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
+                      {countAttendees(sortedEvents)} attendees
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-2 text-center text-xs font-black uppercase tracking-[0.16em] text-slate-400">
+                  {WEEKDAYS.map((weekday) => (
+                    <div key={weekday} className="py-2">
+                      {weekday}
+                    </div>
                   ))}
                 </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                  <CalendarDays className="mx-auto size-8 text-slate-400" />
-                  <p className="mt-3 text-sm leading-6 text-slate-600">
-                    {events.length === 0
-                      ? "Sync Calendar to load your upcoming events."
-                      : "No events on this day. Pick a blue day to inspect meetings."}
-                  </p>
+
+                <div className="grid grid-cols-7 gap-2">
+                  {calendarModel.days.map((day) => (
+                    <button
+                      key={day.key}
+                      onClick={() => setSelectedDateKey(day.key)}
+                      className={`min-h-24 rounded-2xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                        selectedDay?.key === day.key
+                          ? "border-blue-400 bg-blue-50 shadow-md shadow-blue-900/5"
+                          : day.isCurrentMonth
+                            ? "border-white bg-white"
+                            : "border-slate-100 bg-white/50 text-slate-400"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-black">{day.label}</span>
+                        {day.events.length ? (
+                          <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">
+                            {day.events.length}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {day.events.slice(0, 2).map((event) => (
+                          <div
+                            key={event.id}
+                            className="truncate rounded-lg bg-blue-100 px-2 py-1 text-[11px] font-bold text-blue-900"
+                          >
+                            {formatTime(event.startTime)} · {event.title}
+                          </div>
+                        ))}
+                        {day.events.length > 2 ? (
+                          <div className="px-2 text-[11px] font-bold text-slate-500">
+                            +{day.events.length - 2} more
+                          </div>
+                        ) : null}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              )}
-            </aside>
-          </section>
+              </div>
+
+              <aside className="space-y-4 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
+                      Day summary
+                    </p>
+                    <h3 className="mt-1 text-xl font-black tracking-tight">
+                      {selectedDay
+                        ? formatDayHeading(selectedDay.date)
+                        : "No day selected"}
+                    </h3>
+                  </div>
+                  <CalendarCheck2 className="size-8 text-blue-600" />
+                </div>
+
+                {selectedDay?.events.length ? (
+                  <div className="space-y-3">
+                    {selectedDay.events.map((event) => (
+                      <article
+                        key={event.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <h4 className="font-black tracking-tight">
+                          {event.title}
+                        </h4>
+                        <p className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+                          <Clock3 className="size-4" />{" "}
+                          {formatTime(event.startTime)} →{" "}
+                          {formatTime(event.endTime)}
+                        </p>
+                        <p className="mt-2 flex items-start gap-2 text-sm leading-6 text-slate-600">
+                          <Users className="mt-1 size-4 shrink-0" />
+                          {event.attendees.length
+                            ? event.attendees.join(", ")
+                            : "No attendees"}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 rounded-full bg-white"
+                          onClick={() => openEditEventDialog(event)}
+                        >
+                          <Pencil className="mr-2 size-3.5" /> Edit
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                    <CalendarDays className="mx-auto size-8 text-slate-400" />
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                      {events.length === 0
+                        ? "Sync Calendar to load your upcoming events."
+                        : "No events on this day. Pick a blue day to inspect meetings."}
+                    </p>
+                  </div>
+                )}
+              </aside>
+            </section>
+          )}
         </CardContent>
       </Card>
 
