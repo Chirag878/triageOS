@@ -1,10 +1,12 @@
 import Link from "next/link";
 import {
   Activity,
+  Bot,
   CalendarCheck,
   Command,
   Home,
   Inbox,
+  MailCheck,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -19,6 +21,9 @@ type Profile = Awaited<ReturnType<typeof requireUser>>;
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
+  { href: "/gmail", label: "Gmail", icon: MailCheck },
+  { href: "/calendar", label: "Calendar", icon: CalendarCheck },
+  { href: "/ai", label: "AI Lab", icon: Bot },
   { href: "/workflows", label: "Workflows", icon: Inbox },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },

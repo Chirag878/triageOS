@@ -8,6 +8,9 @@ const protectedPrefixes = [
   "/onboarding",
   "/reset-password",
   "/workflows",
+  "/gmail",
+  "/calendar",
+  "/ai",
   "/activity",
   "/settings",
 ];

@@ -70,12 +70,6 @@ type ApiResponse = {
   error?: string;
 };
 
-type CalendarSyncResponse = {
-  count?: number;
-  events?: { id: string; title: string; startTime: string | null }[];
-  error?: string;
-};
-
 export function TriageDashboard({
   initialItems,
 }: {
@@ -88,8 +82,6 @@ export function TriageDashboard({
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
-  const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
-  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const selectedIndex = useMemo(
@@ -127,32 +119,6 @@ export function TriageDashboard({
 
       setItems(payload.items ?? []);
       setLastImported(payload.imported ?? 0);
-    });
-  };
-
-  const syncCalendar = () => {
-    startTransition(async () => {
-      setError(null);
-      setCalendarMessage(null);
-      setIsSyncingCalendar(true);
-
-      const response = await fetch("/api/calendar/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxResults: 10 }),
-      });
-      const payload = (await response.json()) as CalendarSyncResponse;
-
-      setIsSyncingCalendar(false);
-
-      if (!response.ok || payload.error) {
-        setError(payload.error ?? "Unable to sync Google Calendar.");
-        return;
-      }
-
-      setCalendarMessage(
-        `Synced ${payload.count ?? 0} upcoming Calendar event${payload.count === 1 ? "" : "s"}.`,
-      );
     });
   };
 
@@ -280,33 +246,6 @@ export function TriageDashboard({
         <StatCard icon={Sparkles} label="Urgent" value={stats.urgent} />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center rounded-[2rem] border border-blue-200/70 bg-blue-50/80 p-5 shadow-sm">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-700">
-            Google Calendar sync
-          </p>
-          <h2 className="mt-2 text-xl font-black tracking-tight text-blue-950">
-            Keep schedule context fresh before AI plans meetings.
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-blue-900/75">
-            This initializes the Calendar side of Corsair by fetching upcoming
-            events and updating the last sync timestamp.
-          </p>
-        </div>
-        <Button
-          onClick={syncCalendar}
-          disabled={isSyncingCalendar || isPending}
-          className="rounded-full bg-blue-700 text-white hover:bg-blue-600"
-        >
-          {isSyncingCalendar ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <CalendarClock className="mr-2 size-4" />
-          )}
-          Sync Calendar
-        </Button>
-      </div>
-
       <div className="rounded-[2rem] border border-emerald-200/70 bg-gradient-to-r from-emerald-50 via-white to-sky-50 p-5 shadow-sm">
         <div className="grid gap-3 md:grid-cols-4">
           <PlaybookStep
@@ -363,11 +302,6 @@ export function TriageDashboard({
           {error ? (
             <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {error}
-            </div>
-          ) : null}
-          {calendarMessage ? (
-            <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-              {calendarMessage}
             </div>
           ) : null}
           {lastImported !== null ? (
@@ -835,10 +769,11 @@ function PriorityBadge({ label }: { label: string }) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "UTC",
   }).format(new Date(value));
 }
