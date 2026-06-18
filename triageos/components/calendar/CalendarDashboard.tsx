@@ -123,7 +123,11 @@ export function CalendarDashboard({
     startTransition(async () => {
       setError(null);
       setMessage(null);
-      const response = await fetch("/api/corsair/connect", { method: "POST" });
+      const response = await fetch("/api/corsair/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo: "/calendar" }),
+      });
       const payload = (await response.json()) as {
         url?: string;
         error?: string;

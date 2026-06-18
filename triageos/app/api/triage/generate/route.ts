@@ -1,6 +1,9 @@
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { db } from "@/db/client";
+import { corsairConnections } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { syncRecentGmailToTriage } from "@/lib/triage/gmail-ingestion";
 
@@ -17,6 +20,11 @@ export async function POST(request: Request) {
       userId: profile.id,
       maxResults: input.maxResults,
     });
+
+    await db
+      .update(corsairConnections)
+      .set({ gmailConnected: true, updatedAt: new Date() })
+      .where(eq(corsairConnections.userId, profile.id));
 
     return NextResponse.json(result);
   } catch (error) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import {
   CORSAIR_CONNECT_PLUGINS,
@@ -9,17 +10,38 @@ import { requireUser } from "@/lib/auth/session";
 import { CorsairError, createCorsairClient } from "@/lib/corsair/client";
 import { getOrCreateCorsairConnection } from "@/lib/corsair/tenant";
 
-export async function POST() {
+const connectSchema = z.object({
+  returnTo: z.string().startsWith("/").optional(),
+});
+
+const ALLOWED_RETURN_TO = new Set([
+  "/dashboard",
+  "/gmail",
+  "/calendar",
+  "/onboarding",
+  "/settings",
+]);
+
+export async function POST(request: Request) {
   try {
     const profile = await requireUser();
+    const body = await request.json().catch(() => ({}));
+    const input = connectSchema.parse(body);
     const connection = await getOrCreateCorsairConnection(profile.id);
     const corsair = createCorsairClient();
     const env = getPublicEnv();
 
+    const returnTo =
+      input.returnTo && ALLOWED_RETURN_TO.has(input.returnTo)
+        ? input.returnTo
+        : "/dashboard";
+    const returnUrl = new URL(CORSAIR_CONNECT_RETURN_PATH, env.appUrl);
+    returnUrl.searchParams.set("next", returnTo);
+
     const connectLink = await corsair.createConnectLink({
       tenantId: connection.corsairAccountId,
       plugins: CORSAIR_CONNECT_PLUGINS,
-      returnUrl: `${env.appUrl}${CORSAIR_CONNECT_RETURN_PATH}`,
+      returnUrl: returnUrl.toString(),
     });
 
     return NextResponse.json({
