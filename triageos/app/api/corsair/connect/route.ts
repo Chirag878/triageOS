@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { CORSAIR_CONNECT_RETURN_PATH, CORSAIR_PLUGIN_IDS } from "@/config/corsair";
 import { apiErrorResponse } from "@/lib/api/errors";
@@ -16,6 +17,8 @@ const ALLOWED_RETURN_PATHS = new Set([
 export async function POST(request: Request) {
   try {
     const profile = await requireUser();
+    const body = await request.json().catch(() => ({}));
+    const input = connectSchema.parse(body);
     const connection = await getOrCreateCorsairConnection(profile.id);
     const corsair = createCorsairClient();
     const body = await request.json().catch(() => ({}));
