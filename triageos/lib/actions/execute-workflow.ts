@@ -25,6 +25,11 @@ type SuggestedCalendarAction = {
   description?: string | null;
 };
 
+const DRAFT_FALLBACK_MESSAGE =
+  "Draft saved in TriageOS. Gmail write failed, but your edited reply is preserved.";
+const SEND_FALLBACK_MESSAGE =
+  "Unable to send through Gmail. Your reply is saved in TriageOS and can be copied.";
+
 export async function executeTriageWorkflow(input: {
   userId: string;
   triageItemId: string;
@@ -156,7 +161,57 @@ export async function executeTriageWorkflow(input: {
       const draftResult = await createGmailDraftReply({
         tenantId: connection.corsairAccountId,
         ...payload,
+      }).catch(async (error: unknown) => {
+        const corsairError = formatErrorMessage(error);
+        console.warn("[execute.workflow] Gmail draft fallback saved", {
+          triageItemId: item.id,
+          userId: input.userId,
+          corsairError,
+        });
+        await createActionLog({
+          userId: input.userId,
+          triageItemId: item.id,
+          actionType: "draft_email_reply",
+          payload,
+          status: "failed",
+          result: { fallbackSaved: true, error: corsairError },
+        });
+        const [fallbackItem] = await db
+          .update(triageItems)
+          .set({
+            suggestedReply: replyBody,
+            status: "ready",
+            errorMessage: corsairError,
+            updatedAt: new Date(),
+          })
+          .where(eq(triageItems.id, item.id))
+          .returning();
+
+        return {
+          fallback: true,
+          item: fallbackItem,
+          corsairError,
+        };
       });
+
+      if (isFallbackResult(draftResult)) {
+        return {
+          ok: true,
+          status: "fallback_saved",
+          message: DRAFT_FALLBACK_MESSAGE,
+          corsairError: draftResult.corsairError,
+          item: draftResult.item,
+          results: {
+            ...results,
+            draft: {
+              fallbackSaved: true,
+              provider: "triageos",
+              reason: draftResult.corsairError,
+            },
+          },
+        };
+      }
+
       results.draft = draftResult;
       updates.draftEmailMessageId = extractId(draftResult);
       await createActionLog({
@@ -187,7 +242,57 @@ export async function executeTriageWorkflow(input: {
       const sendResult = await sendGmailReply({
         tenantId: connection.corsairAccountId,
         ...payload,
+      }).catch(async (error: unknown) => {
+        const corsairError = formatErrorMessage(error);
+        console.warn("[execute.workflow] Gmail send failed; reply preserved", {
+          triageItemId: item.id,
+          userId: input.userId,
+          corsairError,
+        });
+        await createActionLog({
+          userId: input.userId,
+          triageItemId: item.id,
+          actionType: "send_email_reply",
+          payload,
+          status: "failed",
+          result: { fallbackSaved: true, error: corsairError },
+        });
+        const [fallbackItem] = await db
+          .update(triageItems)
+          .set({
+            suggestedReply: replyBody,
+            status: "ready",
+            errorMessage: corsairError,
+            updatedAt: new Date(),
+          })
+          .where(eq(triageItems.id, item.id))
+          .returning();
+
+        return {
+          fallback: true,
+          item: fallbackItem,
+          corsairError,
+        };
       });
+
+      if (isFallbackResult(sendResult)) {
+        return {
+          ok: false,
+          status: "send_failed_saved",
+          message: SEND_FALLBACK_MESSAGE,
+          corsairError: sendResult.corsairError,
+          item: sendResult.item,
+          results: {
+            ...results,
+            sentEmail: {
+              fallbackSaved: true,
+              provider: "triageos",
+              reason: sendResult.corsairError,
+            },
+          },
+        };
+      }
+
       results.sentEmail = sendResult;
       await createActionLog({
         userId: input.userId,
@@ -294,4 +399,22 @@ function extractEmail(value: string) {
 function extractId(value: JsonRecord) {
   const id = value.id ?? value.message?.valueOf();
   return typeof id === "string" ? id : undefined;
+}
+
+function formatErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Gmail write failed.";
+}
+
+function isFallbackResult(
+  value: unknown,
+): value is {
+  fallback: true;
+  item: typeof triageItems.$inferSelect;
+  corsairError: string;
+} {
+  if (!value || typeof value !== "object" || !("fallback" in value)) {
+    return false;
+  }
+
+  return value.fallback === true;
 }

@@ -79,6 +79,10 @@ type ApiResponse = {
   item?: GmailItem;
   imported?: number;
   error?: string;
+  ok?: boolean;
+  status?: "fallback_saved" | "send_failed_saved" | string;
+  message?: string;
+  corsairError?: string;
 };
 
 type ReplyExecutionMode = "draft" | "send" | "bundle";
@@ -350,12 +354,21 @@ export function GmailDashboard({
         ),
       );
       setSelectedItemId(payload.item.id);
+      if (payload.status === "send_failed_saved") {
+        setError(
+          payload.message ??
+            "Unable to send through Gmail. Your reply is saved in TriageOS and can be copied.",
+        );
+        return;
+      }
+
       setMessage(
-        mode === "send"
-          ? "Reply sent from Gmail after your approval."
-          : mode === "bundle"
-            ? "Action bundle approved: TriageOS created the draft and calendar event through Corsair."
-            : "Draft saved in Gmail after your review.",
+        payload.message ??
+          (mode === "send"
+            ? "Reply sent from Gmail after your approval."
+            : mode === "bundle"
+              ? "Action bundle approved: TriageOS created the draft and calendar event through Corsair."
+              : "Draft saved to Gmail."),
       );
     });
   };
@@ -784,9 +797,20 @@ function ReplyReviewPanel({
   onExecute: (mode: ReplyExecutionMode, draftText: string) => void;
 }) {
   const [draftText, setDraftText] = useState(item.suggestedReply ?? "");
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const isDraftEdited = draftText !== (item.suggestedReply ?? "");
   const canExecuteReply = Boolean(draftText.trim()) && !isAnalyzing;
   const isCompleted = item.status === "completed";
+  const copyReply = async () => {
+    if (!draftText.trim()) return;
+
+    try {
+      await navigator.clipboard.writeText(draftText);
+      setCopyMessage("Reply copied.");
+    } catch {
+      setCopyMessage("Copy failed. Select the reply text manually.");
+    }
+  };
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -809,7 +833,12 @@ function ReplyReviewPanel({
             className="mt-4 min-h-56 resize-y rounded-2xl border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-800"
             placeholder="Review and edit the AI reply before saving or sending."
           />
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {copyMessage ? (
+            <p className="mt-2 text-xs font-semibold text-slate-500">
+              {copyMessage}
+            </p>
+          ) : null}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
             <Button
               type="button"
               onClick={onAnalyze}
@@ -823,6 +852,15 @@ function ReplyReviewPanel({
                 <Bot className="mr-2 size-4" />
               )}
               Regenerate
+            </Button>
+            <Button
+              type="button"
+              onClick={copyReply}
+              disabled={!draftText.trim()}
+              variant="outline"
+              className="rounded-full bg-white"
+            >
+              Copy Reply
             </Button>
             <Button
               type="button"
