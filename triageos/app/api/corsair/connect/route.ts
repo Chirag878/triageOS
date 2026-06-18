@@ -14,6 +14,11 @@ const ALLOWED_RETURN_PATHS = new Set([
   "/onboarding",
 ]);
 
+const connectSchema = z.object({
+  returnTo: z.string().optional(),
+  plugin: z.string().optional(),
+});
+
 export async function POST(request: Request) {
   try {
     const profile = await requireUser();
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
     const input = connectSchema.parse(body);
     const connection = await getOrCreateCorsairConnection(profile.id);
     const corsair = createCorsairClient();
-    const body = await request.json().catch(() => ({}));
+  
     const returnTo = sanitizeReturnTo(
       typeof body.returnTo === "string" ? body.returnTo : null,
     );
