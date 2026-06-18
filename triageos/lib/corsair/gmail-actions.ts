@@ -8,6 +8,9 @@ export type GmailDraftReplyInput = {
   to: string;
   subject: string;
   body: string;
+  from?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
   threadId?: string | null;
 };
 
@@ -19,6 +22,10 @@ export async function createGmailDraftReply(input: GmailDraftReplyInput) {
     tenantId: input.tenantId,
     label: "create Gmail draft",
     attempts: [
+      {
+        path: GMAIL_CREATE_DRAFT_PATH,
+        payload: buildDraftRawPayload(input),
+      },
       {
         path: GMAIL_CREATE_DRAFT_PATH,
         payload: buildDraftPayload(input),
@@ -36,6 +43,10 @@ export async function sendGmailReply(input: GmailDraftReplyInput) {
     tenantId: input.tenantId,
     label: "send Gmail reply",
     attempts: [
+      {
+        path: GMAIL_SEND_MESSAGE_PATH,
+        payload: buildSendRawPayload(input),
+      },
       {
         path: GMAIL_SEND_MESSAGE_PATH,
         payload: buildSendPayload(input),
@@ -61,7 +72,7 @@ async function runGmailAction(input: {
       console.info("[corsair.gmail] running action", {
         label: input.label,
         operation: attempt.path,
-        payloadShape: sanitizeGmailPayload(attempt.payload),
+        payload: sanitizeGmailPayload(attempt.payload),
       });
 
       return unwrapCorsairPayload(
@@ -78,7 +89,7 @@ async function runGmailAction(input: {
       console.warn("[corsair.gmail] action attempt failed", {
         label: input.label,
         operation: attempt.path,
-        payloadShape: sanitizeGmailPayload(attempt.payload),
+        payload: sanitizeGmailPayload(attempt.payload),
         message,
       });
     }
@@ -89,14 +100,24 @@ async function runGmailAction(input: {
   throw new Error(
     `Unable to ${input.label} through Corsair. Attempted operations: ${input.attempts
       .map((attempt) => attempt.path)
-      .join(", ")}. Failures: ${failures.join(" | ")}. Gmail catalog: ${catalog}`,
+      .join(", ")}. Sanitized payloads: ${input.attempts
+      .map((attempt) => `${attempt.path} ${JSON.stringify(sanitizeGmailPayload(attempt.payload))}`)
+      .join(" | ")}. Failures: ${failures.join(" | ")}. Gmail catalog: ${catalog}`,
   );
+}
+
+function buildDraftRawPayload(input: GmailDraftReplyInput) {
+  return buildGmailMessage(input);
 }
 
 function buildDraftPayload(input: GmailDraftReplyInput) {
   return {
     message: buildGmailMessage(input),
   };
+}
+
+function buildSendRawPayload(input: GmailDraftReplyInput) {
+  return buildGmailMessage(input);
 }
 
 function buildSendPayload(input: GmailDraftReplyInput) {
@@ -121,23 +142,40 @@ function buildSendRestPayload(input: GmailDraftReplyInput) {
 
 function buildGmailMessage(input: GmailDraftReplyInput) {
   return {
-    raw: buildRawEmail({
+    raw: buildRawGmailMessage({
+      from: input.from,
       to: input.to,
       subject: input.subject.startsWith("Re:")
         ? input.subject
         : `Re: ${input.subject}`,
       body: input.body,
+      inReplyTo: input.inReplyTo,
+      references: input.references,
     }),
     threadId: input.threadId ?? undefined,
   };
 }
 
-function buildRawEmail(input: { to: string; subject: string; body: string }) {
-  const message = [
+export function buildRawGmailMessage(input: {
+  to: string;
+  subject: string;
+  body: string;
+  from?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
+}) {
+  const headers = [
+    input.from ? `From: ${input.from}` : null,
     `To: ${input.to}`,
     `Subject: ${input.subject}`,
+    input.inReplyTo ? `In-Reply-To: ${input.inReplyTo}` : null,
+    input.references ? `References: ${input.references}` : null,
     'Content-Type: text/plain; charset="UTF-8"',
     "MIME-Version: 1.0",
+  ].filter(Boolean);
+
+  const message = [
+    ...headers,
     "",
     input.body,
   ].join("\r\n");
@@ -150,30 +188,47 @@ function buildRawEmail(input: { to: string; subject: string; body: string }) {
 }
 
 function sanitizeGmailPayload(payload: JsonRecord): JsonRecord {
+  if (typeof payload.raw === "string") {
+    return sanitizeGmailMessage(payload);
+  }
+
   if (isJsonRecord(payload.message)) {
-    return { message: sanitizeGmailMessage(payload.message) };
+    return {
+      keys: Object.keys(payload),
+      message: sanitizeGmailMessage(payload.message),
+    };
   }
 
   if (isJsonRecord(payload.requestBody)) {
     if (isJsonRecord(payload.requestBody.message)) {
       return {
+        keys: Object.keys(payload),
         requestBody: {
+          keys: Object.keys(payload.requestBody),
           message: sanitizeGmailMessage(payload.requestBody.message),
         },
       };
     }
 
     return {
+      keys: Object.keys(payload),
       requestBody: sanitizeGmailMessage(payload.requestBody),
     };
   }
 
-  return payload;
+  return {
+    keys: Object.keys(payload),
+    includesRaw: false,
+    includesThreadId: typeof payload.threadId === "string",
+  };
 }
 
 function sanitizeGmailMessage(message: JsonRecord): JsonRecord {
   return {
+    keys: Object.keys(message),
+    includesRaw: typeof message.raw === "string",
     raw: typeof message.raw === "string" ? `<base64url:${message.raw.length}>` : typeof message.raw,
+    includesThreadId: typeof message.threadId === "string",
     threadId: typeof message.threadId === "string" ? "<threadId>" : message.threadId,
   };
 }
@@ -193,7 +248,17 @@ async function getGmailCatalogDiagnostic() {
           plugin.id === "gmail",
       );
 
-    return JSON.stringify(gmail ?? "gmail catalog entry unavailable");
+    return JSON.stringify({
+      gmail: gmail ?? "gmail catalog entry unavailable",
+      availableOperationNames:
+        "The installed @corsair-dev/app catalog exposes plugin metadata/counts, not individual Gmail operation names.",
+      knownFromCodeAndSdkExamples: [
+        "gmail.api.messages.list",
+        "gmail.api.messages.get",
+        GMAIL_CREATE_DRAFT_PATH,
+        GMAIL_SEND_MESSAGE_PATH,
+      ],
+    });
   } catch (error) {
     return error instanceof Error
       ? `unable to load SDK catalog: ${error.message}`
