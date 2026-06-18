@@ -99,5 +99,52 @@ export async function generateAiWorkflowCard(input: PlannerInput) {
 
 function parseAiWorkflowCard(content: string): AiTriageOutput {
   const parsed = JSON.parse(content) as unknown;
-  return aiTriageOutputSchema.parse(parsed);
+  return aiTriageOutputSchema.parse(coerceAiWorkflowCardNumbers(parsed));
+}
+
+function coerceAiWorkflowCardNumbers(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    ...record,
+    priorityScore: coerceNumber(record.priorityScore),
+    suggestedCalendarAction: coerceCalendarActionNumbers(
+      record.suggestedCalendarAction,
+    ),
+    autopilotScore: coerceAutopilotScoreNumbers(record.autopilotScore),
+  };
+}
+
+function coerceCalendarActionNumbers(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    ...record,
+    durationMinutes: coerceNumber(record.durationMinutes),
+  };
+}
+
+function coerceAutopilotScoreNumbers(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    ...record,
+    confidence: coerceNumber(record.confidence),
+    estimatedMinutesSaved: coerceNumber(record.estimatedMinutesSaved),
+  };
+}
+
+function coerceNumber(value: unknown) {
+  if (typeof value !== "string" || value.trim() === "") return value;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : value;
 }

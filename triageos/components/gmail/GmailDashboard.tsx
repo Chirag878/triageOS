@@ -157,12 +157,12 @@ export function GmailDashboard({
     () => items.find((item) => item.id === selectedItemId) ?? null,
     [items, selectedItemId],
   );
-  const aiReady = items.filter((item) => Boolean(item.suggestedReply)).length;
+  const aiReady = items.filter(hasAiCard).length;
   const urgent = items.filter((item) => item.priorityLabel === "urgent").length;
   const meetingAsks = items.filter(
     (item) => item.workflowType === "meeting_request",
   ).length;
-  const nextNeedsAi = items.find((item) => !item.suggestedReply);
+  const nextNeedsAi = items.find((item) => !hasAiCard(item));
   const decisionCards = useMemo(() => items.map(toDecisionCard), [items]);
   const categoryCounts = useMemo(
     () =>
@@ -293,7 +293,10 @@ export function GmailDashboard({
       return;
     }
 
-    if (items[0]) setSelectedItemId(items[0].id);
+    if (items[0]) {
+      setMessage("All loaded conversations already have AI decision cards.");
+      setSelectedItemId(items[0].id);
+    }
   };
 
   const executeActionBundle = (triageItemId: string) => {
@@ -659,7 +662,7 @@ function GmailDetailDialog({
                   ) : (
                     <Bot className="mr-2 size-4" />
                   )}
-                  {item.suggestedReply ? "Regenerate AI" : "Generate AI"}
+                  {hasAiCard(item) ? "Regenerate AI" : "Generate AI"}
                 </Button>
               </div>
             </section>
@@ -813,7 +816,7 @@ function ConversationCard({
   onReview: () => void;
   onAnalyze: () => void;
 }) {
-  const needsAi = !card.item.suggestedReply;
+  const needsAi = !hasAiCard(card.item);
   return (
     <article className="group rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.03] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-900/5">
       <div className="flex flex-col gap-4">
@@ -945,6 +948,15 @@ function toDecisionCard(item: GmailItem): DecisionCard {
         : Math.max(35, Math.min(72, item.priorityScore * 8)),
     cta: getCardCta(item),
   };
+}
+
+function hasAiCard(item: GmailItem) {
+  return Boolean(
+    item.suggestedReply ||
+      item.suggestedCalendarAction ||
+      item.autopilotScore ||
+      item.changeSummary,
+  );
 }
 
 function getDecisionCategory(item: GmailItem): DecisionCategory {
