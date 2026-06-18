@@ -1,11 +1,16 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMemo, useState, useTransition } from "react";
 import {
   CalendarCheck2,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Loader2,
+  Pencil,
+  Plus,
   RefreshCw,
   Sparkles,
   Users,
@@ -14,6 +19,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -38,6 +53,11 @@ type CalendarSyncResponse = {
   error?: string;
 };
 
+type CalendarCreateResponse = {
+  event?: Record<string, unknown>;
+  error?: string;
+};
+
 type CalendarDay = {
   date: Date;
   key: string;
@@ -52,6 +72,16 @@ export function CalendarDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [visibleMonthKey, setVisibleMonthKey] = useState<string | null>(null);
+  const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventStart, setEventStart] = useState("");
+  const [eventDuration, setEventDuration] = useState("30");
+  const [eventTimezone, setEventTimezone] = useState("UTC");
+  const [eventAttendees, setEventAttendees] = useState("");
+  const [eventDescription, setEventDescription] = useState("");
+  const [eventReminder, setEventReminder] = useState("10");
   const [isPending, startTransition] = useTransition();
 
   const sortedEvents = useMemo(
@@ -65,8 +95,8 @@ export function CalendarDashboard() {
   );
 
   const calendarModel = useMemo(
-    () => buildCalendarModel(sortedEvents),
-    [sortedEvents],
+    () => buildCalendarModel(sortedEvents, visibleMonthKey),
+    [sortedEvents, visibleMonthKey],
   );
   const selectedDay = useMemo(
     () =>
@@ -104,10 +134,120 @@ export function CalendarDashboard() {
       const nextEvents = payload.events ?? [];
       setEvents(nextEvents);
       setSelectedDateKey(firstEventDateKey(nextEvents));
+      setVisibleMonthKey(firstEventMonthKey(nextEvents));
       setMessage(
         `Synced ${payload.count ?? 0} event${payload.count === 1 ? "" : "s"} via ${payload.operationPath ?? "Corsair"}.`,
       );
     });
+  };
+
+  const openNewEventDialog = () => {
+    setEditingEventId(null);
+    setEventTitle("");
+    setEventStart(defaultDateTimeLocal(selectedDay?.date));
+    setEventDuration("30");
+    setEventTimezone("UTC");
+    setEventAttendees("");
+    setEventDescription("");
+    setEventReminder("10");
+    setIsEventDialogOpen(true);
+  };
+
+  const openEditEventDialog = (event: CalendarEvent) => {
+    setEditingEventId(event.id);
+    setEventTitle(event.title);
+    setEventStart(toDateTimeLocal(event.startTime));
+    setEventDuration(
+      String(getDurationMinutes(event.startTime, event.endTime) ?? 30),
+    );
+    setEventTimezone("UTC");
+    setEventAttendees(event.attendees.join(", "));
+    setEventDescription("");
+    setEventReminder("10");
+    setIsEventDialogOpen(true);
+  };
+
+  const submitEventForm = () => {
+    const startTime = fromDateTimeLocal(eventStart);
+    const attendees = splitAttendees(eventAttendees);
+    const durationMinutes = Number(eventDuration) || 30;
+    const reminderMinutes = eventReminder === "" ? null : Number(eventReminder);
+
+    if (!eventTitle.trim() || !startTime) {
+      setError("Add a title and start time before saving the event.");
+      return;
+    }
+
+    if (editingEventId) {
+      const endTime = new Date(
+        new Date(startTime).getTime() + durationMinutes * 60_000,
+      ).toISOString();
+      setEvents((current) =>
+        current.map((event) =>
+          event.id === editingEventId
+            ? {
+                ...event,
+                title: eventTitle.trim(),
+                startTime,
+                endTime,
+                attendees,
+              }
+            : event,
+        ),
+      );
+      setMessage(
+        "Updated this event in the TriageOS calendar view. Google Calendar update support is the next integration step.",
+      );
+      setIsEventDialogOpen(false);
+      return;
+    }
+
+    startTransition(async () => {
+      setError(null);
+      setMessage(null);
+
+      const response = await fetch("/api/calendar/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: eventTitle,
+          startTime,
+          durationMinutes,
+          timezone: eventTimezone,
+          attendees,
+          description: eventDescription || null,
+          reminderMinutes,
+        }),
+      });
+      const payload = (await response.json()) as CalendarCreateResponse;
+
+      if (!response.ok || payload.error) {
+        setError(payload.error ?? "Unable to create Google Calendar event.");
+        return;
+      }
+
+      const endTime = new Date(
+        new Date(startTime).getTime() + durationMinutes * 60_000,
+      ).toISOString();
+      const createdEvent: CalendarEvent = {
+        id: readCreatedEventId(payload.event) ?? crypto.randomUUID(),
+        title: eventTitle.trim(),
+        startTime,
+        endTime,
+        attendees,
+      };
+      setEvents((current) => [...current, createdEvent]);
+      setSelectedDateKey(toDateKey(startTime));
+      setVisibleMonthKey(toMonthKey(startTime));
+      setMessage("Created the event in Google Calendar through Corsair.");
+      setIsEventDialogOpen(false);
+    });
+  };
+
+  const moveMonth = (direction: -1 | 1) => {
+    setVisibleMonthKey((current) =>
+      shiftMonthKey(current ?? calendarModel.monthKey, direction),
+    );
   };
 
   const createCalendarSummary = () => {
@@ -154,6 +294,12 @@ export function CalendarDashboard() {
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                onClick={openNewEventDialog}
+                className="rounded-full bg-slate-950 text-white hover:bg-slate-800"
+              >
+                <Plus className="mr-2 size-4" /> Add event
+              </Button>
               <Button
                 onClick={createCalendarSummary}
                 variant="outline"
@@ -203,9 +349,29 @@ export function CalendarDashboard() {
                   <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-700">
                     Month view
                   </p>
-                  <h2 className="text-2xl font-black tracking-tight text-slate-950">
-                    {calendarModel.monthLabel}
-                  </h2>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-9 rounded-full bg-white"
+                      onClick={() => moveMonth(-1)}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </Button>
+                    <h2 className="text-2xl font-black tracking-tight text-slate-950">
+                      {calendarModel.monthLabel}
+                    </h2>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-9 rounded-full bg-white"
+                      onClick={() => moveMonth(1)}
+                    >
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
                   <span className="rounded-full bg-white px-3 py-1.5 shadow-sm">
@@ -302,6 +468,15 @@ export function CalendarDashboard() {
                           ? event.attendees.join(", ")
                           : "No attendees"}
                       </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 rounded-full bg-white"
+                        onClick={() => openEditEventDialog(event)}
+                      >
+                        <Pencil className="mr-2 size-3.5" /> Edit
+                      </Button>
                     </article>
                   ))}
                 </div>
@@ -319,14 +494,101 @@ export function CalendarDashboard() {
           </section>
         </CardContent>
       </Card>
+
+      <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
+        <DialogContent className="rounded-[2rem] sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black tracking-tight">
+              {editingEventId ? "Edit event" : "Add calendar event"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingEventId
+                ? "Update how this event appears in the TriageOS calendar view."
+                : "Create a Google Calendar event through Corsair with an optional reminder."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <FormField label="Title">
+              <Input
+                value={eventTitle}
+                onChange={(event) => setEventTitle(event.target.value)}
+              />
+            </FormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Start">
+                <Input
+                  type="datetime-local"
+                  value={eventStart}
+                  onChange={(event) => setEventStart(event.target.value)}
+                />
+              </FormField>
+              <FormField label="Duration minutes">
+                <Input
+                  inputMode="numeric"
+                  value={eventDuration}
+                  onChange={(event) => setEventDuration(event.target.value)}
+                />
+              </FormField>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Timezone">
+                <Input
+                  value={eventTimezone}
+                  onChange={(event) => setEventTimezone(event.target.value)}
+                />
+              </FormField>
+              <FormField label="Reminder minutes">
+                <Input
+                  inputMode="numeric"
+                  value={eventReminder}
+                  onChange={(event) => setEventReminder(event.target.value)}
+                  placeholder="10"
+                />
+              </FormField>
+            </div>
+            <FormField label="Attendees">
+              <Input
+                value={eventAttendees}
+                onChange={(event) => setEventAttendees(event.target.value)}
+                placeholder="name@example.com, teammate@example.com"
+              />
+            </FormField>
+            <FormField label="Description">
+              <Textarea
+                value={eventDescription}
+                onChange={(event) => setEventDescription(event.target.value)}
+                className="min-h-24"
+              />
+            </FormField>
+            <Button
+              onClick={submitEventForm}
+              disabled={isPending}
+              className="rounded-full bg-blue-700 text-white hover:bg-blue-600"
+            >
+              {isPending ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <CalendarCheck2 className="mr-2 size-4" />
+              )}
+              {editingEventId ? "Update view" : "Create event"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function buildCalendarModel(events: CalendarEvent[]) {
-  const anchor = events.find((event) => event.startTime)?.startTime
-    ? new Date(events.find((event) => event.startTime)?.startTime as string)
-    : new Date("2026-06-01T00:00:00.000Z");
+function buildCalendarModel(
+  events: CalendarEvent[],
+  visibleMonthKey: string | null,
+) {
+  const firstEventStart = events.find((event) => event.startTime)?.startTime;
+  const anchor = visibleMonthKey
+    ? new Date(`${visibleMonthKey}-01T00:00:00.000Z`)
+    : firstEventStart
+      ? new Date(firstEventStart)
+      : new Date("2026-06-01T00:00:00.000Z");
   const year = anchor.getUTCFullYear();
   const month = anchor.getUTCMonth();
   const firstDay = new Date(Date.UTC(year, month, 1));
@@ -358,6 +620,7 @@ function buildCalendarModel(events: CalendarEvent[]) {
 
   return {
     days,
+    monthKey: `${year}-${String(month + 1).padStart(2, "0")}`,
     monthLabel: new Intl.DateTimeFormat("en-US", {
       month: "long",
       year: "numeric",
@@ -366,10 +629,88 @@ function buildCalendarModel(events: CalendarEvent[]) {
   };
 }
 
+function firstEventMonthKey(events: CalendarEvent[]) {
+  return events.find((event) => event.startTime)?.startTime
+    ? toMonthKey(events.find((event) => event.startTime)?.startTime ?? null)
+    : null;
+}
+
 function firstEventDateKey(events: CalendarEvent[]) {
   return events.find((event) => event.startTime)?.startTime
     ? toDateKey(events.find((event) => event.startTime)?.startTime ?? null)
     : null;
+}
+
+function shiftMonthKey(monthKey: string, direction: -1 | 1) {
+  const [year = "2026", month = "06"] = monthKey.split("-");
+  const date = new Date(
+    Date.UTC(Number(year), Number(month) - 1 + direction, 1),
+  );
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function splitAttendees(value: string) {
+  return value
+    .split(",")
+    .map((attendee) => attendee.trim())
+    .filter(Boolean);
+}
+
+function defaultDateTimeLocal(date?: Date) {
+  const base = date ? new Date(date) : new Date("2026-06-18T09:00:00.000Z");
+  base.setUTCHours(9, 0, 0, 0);
+  return base.toISOString().slice(0, 16);
+}
+
+function toDateTimeLocal(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocal(value: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function getDurationMinutes(start: string | null, end: string | null) {
+  if (!start || !end) return null;
+  const duration = new Date(end).getTime() - new Date(start).getTime();
+  return Number.isFinite(duration) && duration > 0
+    ? Math.round(duration / 60_000)
+    : null;
+}
+
+function readCreatedEventId(event: Record<string, unknown> | undefined) {
+  const id = event?.id ?? event?.eventId;
+  return typeof id === "string" ? id : null;
+}
+
+function toMonthKey(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <Label className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </Label>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
 }
 
 function countAttendees(events: CalendarEvent[]) {

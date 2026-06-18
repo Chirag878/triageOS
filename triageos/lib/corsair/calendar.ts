@@ -11,6 +11,7 @@ export type CalendarEventInput = {
   durationMinutes: number;
   timezone: string;
   description?: string | null;
+  reminderMinutes?: number | null;
 };
 
 const CALENDAR_CREATE_EVENT_PATH = "googlecalendar.api.events.create";
@@ -39,6 +40,16 @@ export async function createCalendarEvent(input: CalendarEventInput) {
             timeZone: input.timezone,
           },
           attendees: input.attendees.map((email) => ({ email })),
+          reminders:
+            input.reminderMinutes !== undefined &&
+            input.reminderMinutes !== null
+              ? {
+                  useDefault: false,
+                  overrides: [
+                    { method: "popup", minutes: input.reminderMinutes },
+                  ],
+                }
+              : undefined,
         },
       },
     }),
