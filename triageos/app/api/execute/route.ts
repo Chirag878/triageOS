@@ -19,7 +19,7 @@ const executeSchema = z.object({
   triageItemId: z.string().uuid(),
   draftReply: z.boolean().default(true),
   sendEmail: z.boolean().default(false),
-  createEvent: z.boolean().default(true),
+  createEvent: z.boolean().default(false),
   confirmed: z.literal(true),
   suggestedReplyOverride: z.string().trim().nullable().optional(),
   calendarActionOverride: calendarActionSchema.nullable().optional(),
@@ -30,6 +30,12 @@ export async function POST(request: Request) {
     const profile = await requireUser();
     const body = await request.json().catch(() => ({}));
     const input = executeSchema.parse(body);
+    console.info("[api.execute] execution mode", {
+      triageItemId: input.triageItemId,
+      draftReply: input.draftReply,
+      sendEmail: input.sendEmail,
+      createEvent: input.createEvent,
+    });
     const result = await executeTriageWorkflow({
       userId: profile.id,
       triageItemId: input.triageItemId,

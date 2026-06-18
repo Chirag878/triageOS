@@ -69,9 +69,6 @@ export async function executeTriageWorkflow(input: {
   }
 
   const replyBody = input.suggestedReplyOverride?.trim() || item.suggestedReply;
-  const calendarAction =
-    input.calendarActionOverride ??
-    (item.suggestedCalendarAction as SuggestedCalendarAction | null);
 
   if (!replyBody && (input.draftReply || input.sendEmail)) {
     throw new Error(
@@ -88,8 +85,20 @@ export async function executeTriageWorkflow(input: {
 
   await db.update(triageItems).set(updates).where(eq(triageItems.id, item.id));
 
+  console.info("[execute.workflow] execution mode", {
+    triageItemId: item.id,
+    userId: input.userId,
+    draftReply: input.draftReply,
+    sendEmail: Boolean(input.sendEmail),
+    createEvent: input.createEvent,
+  });
+
   try {
     if (input.createEvent && !item.createdCalendarEventId) {
+      const calendarAction =
+        input.calendarActionOverride ??
+        (item.suggestedCalendarAction as SuggestedCalendarAction | null);
+
       if (calendarAction?.type && calendarAction.type !== "none") {
         const payload = normalizeCalendarAction(calendarAction, item.fromEmail);
         await createActionLog({
@@ -195,7 +204,8 @@ export async function executeTriageWorkflow(input: {
       reviewedUpdates.suggestedReply = replyBody ?? null;
     }
     if (input.calendarActionOverride !== undefined) {
-      reviewedUpdates.suggestedCalendarAction = calendarAction as JsonRecord;
+      reviewedUpdates.suggestedCalendarAction =
+        input.calendarActionOverride as JsonRecord;
     }
 
     const [updated] = await db
